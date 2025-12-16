@@ -12,7 +12,8 @@ exports.create = async (req, res) => {
 
 exports.getAll = async (req, res) => {
   try {
-    const items = await department.findAll();
+    // Only return active departments (soft delete filter)
+    const items = await department.findAll({ where: { Active: true } });
     res.json(items);
   } catch (err) {
     res.status(500).json({ error: err.message });
@@ -21,7 +22,8 @@ exports.getAll = async (req, res) => {
 
 exports.getById = async (req, res) => {
   try {
-    const item = await department.findByPk(req.params.id);
+    // Only return active department (soft delete filter)
+    const item = await department.findOne({ where: { id: req.params.id, Active: true } });
     if (item) res.json(item);
     else res.status(404).json({ message: "department not found" });
   } catch (err) {
@@ -32,6 +34,7 @@ exports.getById = async (req, res) => {
 exports.update = async (req, res) => {
   try {
     const { Code, Name } = req.body;
+    // Only update active departments (soft delete filter)
     const [updated] = await department.update(
       {
         Code,
@@ -40,7 +43,7 @@ exports.update = async (req, res) => {
         ModifyDate: new Date()
       },
       {
-        where: { id: req.params.id }
+        where: { id: req.params.id, Active: true }
       }
     );
     if (updated) {
@@ -54,10 +57,16 @@ exports.update = async (req, res) => {
   }
 };
 
+// SOFT DELETE FUNCTION: Sets Active = false instead of removing from database
+// Database table affected: 'department'
 exports.delete = async (req, res) => {
   try {
-    const deleted = await department.destroy({ where: { id: req.params.id } });
-    if (deleted) res.json({ message: "department deleted" });
+    // Soft delete - sets Active to false, record remains in database
+    const [updated] = await department.update(
+      { Active: false, ModifyBy: req.user?.id ?? 1, ModifyDate: new Date() },
+      { where: { id: req.params.id, Active: true } }
+    );
+    if (updated) res.json({ message: "department deactivated" });
     else res.status(404).json({ message: "department not found" });
   } catch (err) {
     res.status(500).json({ error: err.message });
