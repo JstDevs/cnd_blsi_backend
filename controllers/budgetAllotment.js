@@ -240,6 +240,35 @@ exports.update = async (req, res) => {
   }
 };
 
+// SOFT DELETE: Sets Active = false instead of removing from database
 exports.delete = async (req, res) => {
-  res.json({ message: 'Deleted logic not implemented, same in old software' });
+  try {
+    const id = req.params.id;
+    const userID = req.user?.id ?? 1;
+
+    // Soft delete - sets Active to false in TransactionTable, record remains in database
+    const [updated] = await TransactionTableModel.update(
+      {
+        Active: false,
+        ModifyBy: userID,
+        ModifyDate: new Date(),
+      },
+      {
+        where: { 
+          ID: id, 
+          Active: true,
+          APAR: { [Op.like]: '%Allotment Release Order%' }
+        },
+      }
+    );
+
+    if (updated) {
+      res.json({ message: 'success' });
+    } else {
+      res.status(404).json({ message: "allotment not found" });
+    }
+  } catch (error) {
+    console.error(error);
+    res.status(500).json({ error: error.message });
+  }
 };

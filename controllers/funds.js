@@ -107,7 +107,7 @@ exports.getAll = async (req, res) => {
 
 exports.getById = async (req, res) => {
   try {
-    const item = await Funds.findByPk(req.params.id);
+    const item = await Funds.findOne({ where: { ID: req.params.id, Active: true } });
     if (item) res.json(item);
     else res.status(404).json({ message: "Funds not found" });
   } catch (err) {
@@ -119,7 +119,7 @@ exports.update = async (req, res) => {
   try {
     const { LinkID, Code, Name, Description, OriginalAmount, Balance, Total, Active } = req.body;
     const [updated] = await Funds.update({ LinkID, Code, Name, Description, OriginalAmount, Balance, Total, Active }, {
-      where: { id: req.params.id }
+      where: { ID: req.params.id, Active: true }
     });
     if (updated) {
       const updatedItem = await Funds.findByPk(req.params.id);
@@ -132,16 +132,22 @@ exports.update = async (req, res) => {
   }
 };
 
+// SOFT DELETE: Sets Active = false instead of removing from database
 exports.delete = async (req, res) => {
   try {
     const id = req.params.id;
 
-    await Funds.update(
+    // Soft delete - sets Active to false, record remains in database
+    const [updated] = await Funds.update(
       { Active: false },
-      { where: { ID: id } }
+      { where: { ID: id, Active: true } }
     );
 
-    res.json({ message: 'success.' });
+    if (updated) {
+      res.json({ message: 'success.' });
+    } else {
+      res.status(404).json({ message: "Funds not found" });
+    }
   } catch (err) {
     console.error('Error deleting fund:', err);
     res.status(500).json({ error: err.message });

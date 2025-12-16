@@ -160,9 +160,9 @@ exports.getAll = async (req, res) => {
 
 exports.getById = async (req, res) => {
   try {
-    const item = await vendorType.findByPk(req.params.id);
+    const item = await BudgetModel.findOne({ where: { ID: req.params.id, Active: true } });
     if (item) res.json(item);
-    else res.status(404).json({ message: "vendorType not found" });
+    else res.status(404).json({ message: "budget not found" });
   } catch (err) {
     res.status(500).json({ error: err.message });
   }
@@ -171,38 +171,43 @@ exports.getById = async (req, res) => {
 exports.update = async (req, res) => {
   try {
     const { Name } = req.body;
-    const [updated] = await vendorType.update({ Name, ModifyBy: req.user.id, ModifyDate: new Date() }, {
-      where: { id: req.params.id }
+    const [updated] = await BudgetModel.update({ Name, ModifyBy: req.user.id, ModifyDate: new Date() }, {
+      where: { ID: req.params.id, Active: true }
     });
     if (updated) {
-      const updatedItem = await vendorType.findByPk(req.params.id);
+      const updatedItem = await BudgetModel.findByPk(req.params.id);
       res.json(updatedItem);
     } else {
-      res.status(404).json({ message: "vendorType not found" });
+      res.status(404).json({ message: "budget not found" });
     }
   } catch (err) {
     res.status(500).json({ error: err.message });
   }
 };
 
+// SOFT DELETE: Sets Active = false instead of removing from database
 exports.delete = async (req, res) => {
   try {
     const id = req.params.id; // or req.body.id
     const userID = req.user.id;
 
-    // Soft delete
-    const deleted = await BudgetModel.update(
+    // Soft delete - sets Active to false, record remains in database
+    const [updated] = await BudgetModel.update(
       {
         Active: false,
-        CreatedDate: new Date(),
-        CreatedBy: userID,
+        ModifyBy: userID,
+        ModifyDate: new Date(),
       },
       {
-        where: { ID: id },
+        where: { ID: id, Active: true },
       }
     );
 
-    res.json({ message: 'success' });
+    if (updated) {
+      res.json({ message: 'success' });
+    } else {
+      res.status(404).json({ message: "budget not found" });
+    }
   } catch (error) {
     console.error(error);
     res.status(500).json({ error: error.message });
