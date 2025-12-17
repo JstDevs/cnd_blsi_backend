@@ -1,6 +1,4 @@
 const { userAccess } = require('../config/database');
-const db = require('../config/database');
-const {getAllWithAssociations}=require("../models/associatedDependency");
 exports.create = async (req, res) => {
   try {
     const { Description } = req.body;
@@ -14,9 +12,15 @@ exports.create = async (req, res) => {
 
 exports.getAll = async (req, res) => {
   try {
-    const items = await getAllWithAssociations(userAccess, 2, { Active: true });
+    // Use simple findAll to avoid circular reference issues with getAllWithAssociations
+    // Return basic userAccess items - associations can be added if needed
+    const items = await userAccess.findAll({ 
+      where: { Active: true },
+      order: [['ID', 'ASC']]
+    });
     res.json(items);
   } catch (err) {
+    console.error('Error in userAccess.getAll:', err);
     res.status(500).json({ error: err.message });
   }
 };

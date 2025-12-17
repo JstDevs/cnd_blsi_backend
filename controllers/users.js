@@ -1,9 +1,6 @@
-const { users } = require('../config/database');
-const { UserUserAccess } = require('../config/database');
+const { users, UserUserAccess, userAccess, employee } = require('../config/database');
 const bcrypt = require('bcrypt');
 const { Op } = require("sequelize");
-const {getAllWithAssociations}=require("../models/associatedDependency");
-const db=require('../config/database')
 const hashPassword = async (password) => {
     const saltRounds = 12;
     return await bcrypt.hash(password, saltRounds);
@@ -43,14 +40,32 @@ exports.create = async (req, res) => {
 
 exports.getAll = async (req, res) => {
   try {
-    // Only return active users
-    const items= await getAllWithAssociations(db.users,2,{ Active: true })
-    // const items = await users.findAll({ where: { Active: true } });
+    // Only return active users with necessary associations
+    // Avoid getAllWithAssociations to prevent circular reference issues
+    
+    const items = await users.findAll({ 
+      where: { Active: true },
+      include: [
+        {
+          model: userAccess,
+          as: 'accessList',
+          required: false
+        },
+        {
+          model: employee,
+          as: 'Employee',
+          required: false
+        }
+      ],
+      order: [['ID', 'ASC']]
+    });
+    
     res.json({
-      status:true,
+      status: true,
       items
     });
   } catch (err) {
+    console.error('Error in users.getAll:', err);
     res.status(500).json({ error: err.message });
   }
 };
