@@ -37,7 +37,7 @@ function requireAuth(req, res, next) {
         req.user = {
             id: decoded.id,
             userName: decoded.userName,
-            userAccessID: decoded.userAccessID,
+            userAccessIDs: decoded.userAccessIDs || [],
             employeeID: decoded.employeeID,
             departmentID: decoded.departmentID,
             departmentCode: decoded.departmentCode,

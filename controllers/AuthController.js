@@ -7,6 +7,7 @@ const db=require('../config/database'); // Adjust the path as necessary
 const Users = db.users
 const UserAccess=db.userAccess
 const requireAuth = require('../middleware/requireAuth'); // Assuming you have a middleware for authentication
+const { access } = require('fs-extra');
 const router = express.Router();
 const Department = require('../config/database').department;
 const Employee = require('../config/database').employee;
@@ -33,7 +34,7 @@ const generateToken = (user) => {
         { 
             id: user.ID,
             userName: user.UserName,
-            userAccessID: user.UserAccessID,
+            userAccessIDs: user.accessList ? user.accessList.map(access => access.ID) : [],
             employeeID: user.EmployeeID,
             departmentID: user.Employee?.Department?.ID,
             departmentCode: user.Employee?.Department?.Code,
@@ -348,6 +349,7 @@ router.login = async (req, res) => {
             status: true,
             user: user,
             token: token, // Include token in response if needed
+            userAccessArray: user.accessList ? JSON.stringify(user.accessList.map(access => String(access.ID))) : JSON.stringify([]),
             message: 'Login successful'
         });
 
@@ -490,7 +492,7 @@ router.register = async(req, res) => {
             UserName: userName,
             Password: hashedPassword,
             userAccessArray: userAccessArray || [], // Assuming userAccessArray is an array of access levels
-            UserAccessID: 1, // Default user access level
+            // UserAccessID: 1, // Default user access level
             Active: true,
             CreatedBy: 'System',
             CreatedDate: new Date()
