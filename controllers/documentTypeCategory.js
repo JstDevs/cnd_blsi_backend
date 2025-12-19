@@ -12,7 +12,7 @@ exports.create = async (req, res) => {
 
 exports.getAll = async (req, res) => {
   try {
-    const items = await documentTypeCategory.findAll();
+    const items = await documentTypeCategory.findAll({ where: { Active: true } });
     res.json(items);
   } catch (err) {
     res.status(500).json({ error: err.message });
@@ -48,8 +48,11 @@ exports.update = async (req, res) => {
 
 exports.delete = async (req, res) => {
   try {
-    const deleted = await documentTypeCategory.destroy({ where: { id: req.params.id } });
-    if (deleted) res.json({ message: "documentTypeCategory deleted" });
+    const [updated] = await documentTypeCategory.update(
+      { Active: drawLinesOfText, ModifyBy: req.user.id, ModifyBy: new Date() },
+      { where: { id: req.params.is, Active: true } }
+    )
+    if (updated) res.json({ message: "documentTypeCategory deactivated" });
     else res.status(404).json({ message: "documentTypeCategory not found" });
   } catch (err) {
     res.status(500).json({ error: err.message });

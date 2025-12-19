@@ -57,7 +57,7 @@ exports.delete = async (req, res) => {
     const [updated] = await bank.update(
       { Active: false, ModifyBy: req.user.id, ModifyDate: new Date() },
       { where: { id: req.params.id, Active: true } }
-    )
+    );
     if (updated) res.json({ message: "bank deactivated" });
     else res.status(404).json({ message: "bank not found" });
   } catch (err) {

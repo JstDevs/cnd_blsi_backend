@@ -29,7 +29,7 @@ exports.create = async (req, res) => {
 
 exports.getAll = async (req, res) => {
   try {
-    const items = await getAllWithAssociations(documentType,1);
+    const items = await getAllWithAssociations(documentType, 1, { Active: true });
     res.json(items);
   } catch (err) {
     res.status(500).json({ error: err.message });
@@ -65,8 +65,16 @@ exports.update = async (req, res) => {
 
 exports.delete = async (req, res) => {
   try {
-    const deleted = await documentType.destroy({ where: { id: req.params.id } });
-    if (deleted) res.json({ message: "documentType deleted" });
+    // const deleted = await documentType.destroy({ where: { id: req.params.id } });
+    // if (deleted) res.json({ message: "documentType deleted" });
+
+    // SOFT DELETE
+
+    const [updated] = await documentType.update(
+      { Active: false, ModifyBy: req.user.id, ModifyDate: new Date() },
+      { where: { id: req.params.id, Active: true } }
+    );
+    if (updated) res.json({ message: "DocumentType deactivated"})
     else res.status(404).json({ message: "documentType not found" });
   } catch (err) {
     res.status(500).json({ error: err.message });

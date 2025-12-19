@@ -12,7 +12,7 @@ exports.create = async (req, res) => {
 
 exports.getAll = async (req, res) => {
   try {
-    const items = await currency.findAll();
+    const items = await currency.findAll({ where: { Active: true } });
     res.json(items);
   } catch (err) {
     res.status(500).json({ error: err.message });
@@ -48,8 +48,16 @@ exports.update = async (req, res) => {
 
 exports.delete = async (req, res) => {
   try {
-    const deleted = await currency.destroy({ where: { id: req.params.id } });
-    if (deleted) res.json({ message: "currency deleted" });
+    // const deleted = await currency.destroy({ where: { id: req.params.id } });
+    // if (deleted) res.json({ message: "currency deleted" });
+
+    // SOFT DELETE HEHE
+
+    const [updated] = await currency.update(
+      { Active: false, ModifyBy: req.user.id, ModifyDate: new Date() },
+      { where: { id: req.params.id, Active: trye} }
+    );
+    if (updated) res.json({ message: "currency deactivated" })
     else res.status(404).json({ message: "currency not found" });
   } catch (err) {
     res.status(500).json({ error: err.message });

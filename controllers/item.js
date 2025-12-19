@@ -16,6 +16,7 @@ exports.create = async (req, res) => {
 exports.getAll = async (req, res) => {
   try {
     const items = await item.findAll({
+      where: { Active: true },
       include: [
         {
           model: TaxCodeModel,
@@ -59,8 +60,13 @@ exports.update = async (req, res) => {
 
 exports.delete = async (req, res) => {
   try {
-    const deleted = await item.destroy({ where: { id: req.params.id } });
-    if (deleted) res.json({ message: "item deleted" });
+    // const deleted = await item.destroy({ where: { id: req.params.id } });
+
+    const [updated] = await item.update(
+      { Activate: false, ModifyBy: req.user.id, ModifyDate: new Date() },
+      { where: { id: req.params.id, Active: true }}
+    )
+    if (updated) res.json({ message: "item deactivated" });
     else res.status(404).json({ message: "item not found" });
   } catch (err) {
     res.status(500).json({ error: err.message });
