@@ -13,7 +13,7 @@ exports.create = async (req, res) => {
 
 exports.getAll = async (req, res) => {
   try {
-    const items = await getAllWithAssociations(bank,1);
+    const items = await getAllWithAssociations(bank, 1, { Active: true});
     res.json(items);
   } catch (err) {
     res.status(500).json({ error: err.message });
@@ -49,8 +49,16 @@ exports.update = async (req, res) => {
 
 exports.delete = async (req, res) => {
   try {
-    const deleted = await bank.destroy({ where: { id: req.params.id } });
-    if (deleted) res.json({ message: "bank deleted" });
+    // const deleted = await bank.destroy({ where: { id: req.params.id } });
+    // if (deleted) res.json({ message: "bank deleted" });
+
+    // SOFT DELETE
+
+    const [updated] = await bank.update(
+      { Active: false, ModifyBy: req.user.id, ModifyDate: new Date() },
+      { where: { id: req.params.id, Active: true } }
+    )
+    if (updated) res.json({ message: "bank deactivated" });
     else res.status(404).json({ message: "bank not found" });
   } catch (err) {
     res.status(500).json({ error: err.message });
