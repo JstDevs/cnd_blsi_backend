@@ -13,7 +13,7 @@ exports.create = async (req, res) => {
 
 exports.getAll = async (req, res) => {
   try {
-    const items = await accountSubType.findAll();
+    const items = await accountSubType.findAll({ where: { Active: true } });
     res.json(items);
   } catch (err) {
     res.status(500).json({ error: err.message });
@@ -49,8 +49,15 @@ exports.update = async (req, res) => {
 
 exports.delete = async (req, res) => {
   try {
-    const deleted = await accountSubType.destroy({ where: { id: req.params.id } });
-    if (deleted) res.json({ message: "accountSubType deleted" });
+    // const deleted = await accountSubType.destroy({ where: { id: req.params.id } });
+    // if (deleted) res.json({ message: "accountSubType deleted" });
+
+    // SOFT DELETE HEHE
+    const [updated] = await accountSubType.update(
+      { Active: false, ModifyBy: req.user.id, ModifyDate: new Date() },
+      { where: { id: req.params.id, Active: true } }
+    );
+    if (updated) res.json({ message: "accountSubType deactivated" });
     else res.status(404).json({ message: "accountSubType not found" });
   } catch (err) {
     res.status(500).json({ error: err.message });
