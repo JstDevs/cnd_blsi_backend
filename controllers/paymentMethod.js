@@ -12,7 +12,7 @@ exports.create = async (req, res) => {
 
 exports.getAll = async (req, res) => {
   try {
-    const items = await paymentMethod.findAll();
+    const items = await paymentMethod.findAll( { where: {Active: true} });
     res.json(items);
   } catch (err) {
     res.status(500).json({ error: err.message });
@@ -48,8 +48,13 @@ exports.update = async (req, res) => {
 
 exports.delete = async (req, res) => {
   try {
-    const deleted = await paymentMethod.destroy({ where: { id: req.params.id } });
-    if (deleted) res.json({ message: "paymentMethod deleted" });
+    // const deleted = await paymentMethod.destroy({ where: { id: req.params.id } });
+    
+    const [updated] = await paymentMethod.update(
+      { Active: false, ModifyBy: req.user.id, ModifyDate: new Date() },
+      { where: { id: req.paramas.id, Active: true } }
+    )
+    if (updated) res.json({ message: "paymentMethod deactivated" });
     else res.status(404).json({ message: "paymentMethod not found" });
   } catch (err) {
     res.status(500).json({ error: err.message });

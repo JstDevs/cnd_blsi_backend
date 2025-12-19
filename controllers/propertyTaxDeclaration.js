@@ -97,7 +97,8 @@ exports.create = async (req, res) => {
 // };
 exports.getAll = async (req, res) => {
   try {
-    const allDeclarations = await propertyTaxDeclaration.findAll();
+    
+    const allDeclarations = await propertyTaxDeclaration.findAll({ where: {Active: true} });
 
     const fullData = await Promise.all(
       allDeclarations.map(async (item) => {
@@ -105,6 +106,7 @@ exports.getAll = async (req, res) => {
 
         const assessmentRows = await TaxDeclarationProperty.findAll({
           where: {
+            Active: true,
             T_D_No: itemPlain.T_D_No,
             PropertyID: itemPlain.PropertyID,
           },
@@ -274,23 +276,21 @@ exports.delete = async (req, res) => {
 
     const { T_D_No, PropertyID } = declaration;
 
-    // Step 2: Delete related assessment rows
-    await TaxDeclarationProperty.destroy({
-      where: {
-        T_D_No,
-        PropertyID
-      },
-      transaction: t
-    });
+    // Soft delete related assessment rows
+    await TaxDeclarationProperty.update(
+      { Active: false, Modifiedby: req.user.id, ModifiedDate: new Date() },
+      { where: { T_D_No, PropertyID, Active: true }, transaction: t }
+    );
 
-    // Step 3: Delete the main record
-    await propertyTaxDeclaration.destroy({
-      where: { ID: id },
-      transaction: t
-    });
+    // Soft delete main record
+    const [updated] = await propertyTaxDeclaration.update(
+      { Active: false, Modifiedby: req.user.id, Modifieddate: new Date() },
+      { where: { ID: id, Active: true }, transaction: t }
+    );
 
     await t.commit();
-    res.json({ message: "propertyTaxDeclaration and related assessment rows deleted" });
+    if (updated) res.json({ message: "propertyTaxDeclaration deactivated" });
+    else res.status(404).json({ message: "propertyTaxDeclaration not found" });
 
   } catch (err) {
     await t.rollback();
