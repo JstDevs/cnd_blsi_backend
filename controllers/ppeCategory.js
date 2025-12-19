@@ -12,7 +12,7 @@ exports.create = async (req, res) => {
 
 exports.getAll = async (req, res) => {
   try {
-    const items = await ppeCategory.findAll();
+    const items = await ppeCategory.findAll({ where: { Active: true } });
     res.json(items);
   } catch (err) {
     res.status(500).json({ error: err.message });
@@ -48,8 +48,11 @@ exports.update = async (req, res) => {
 
 exports.delete = async (req, res) => {
   try {
-    const deleted = await ppeCategory.destroy({ where: { id: req.params.id } });
-    if (deleted) res.json({ message: "ppeCategory deleted" });
+    const [updated] = await ppeCategory.update(
+      { Active: false, ModifiedBy: req.user.id, ModifiedDate: new Date() },
+      { where: { id: req.params.id, Active: true } }
+    );
+    if (updated) res.json({ message: "ppeCategory deactivated" });
     else res.status(404).json({ message: "ppeCategory not found" });
   } catch (err) {
     res.status(500).json({ error: err.message });

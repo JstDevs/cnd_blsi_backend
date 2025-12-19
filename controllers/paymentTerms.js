@@ -61,18 +61,15 @@ exports.delete = async (req, res) => {
         message: "Cannot delete. Payment term is already used in vendor details."
       });
     }
-    // SOFT DEL
+
+    // SOFT DELETE
     const [updated] = await paymentTerms.update(
       { Active: false, ModifyBy: req.user.id, ModifyDate: new Date() },
       { where: { ID: id, Active: true } }
     );
 
-    // // 2️⃣ Delete if not used
-    // await paymentTerms.destroy({ where: { ID: id } });
-
     if (updated) res.json({ message: "paymentTerms deactivated" });
     else res.status(404).json({ message: "paymentTerms not found" });
-    res.json({ message: "success" });
   } catch (err) {
     res.status(500).json({ error: err.message });
   }

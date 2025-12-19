@@ -48,12 +48,10 @@ exports.update = async (req, res) => {
 
 exports.delete = async (req, res) => {
   try {
-    // const deleted = await industryType.destroy({ where: { id: req.params.id } });
-
     const [updated] = await industryType.update(
       { Active: false, ModifyBy: req.user.id, ModifyDate: new Date() },
-      { where: { id: req.paramas.id, Active: true } }
-    )
+      { where: { id: req.params.id, Active: true } }
+    );
     if (updated) res.json({ message: "industryType deactivated" });
     else res.status(404).json({ message: "industryType not found" });
   } catch (err) {

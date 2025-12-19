@@ -49,12 +49,10 @@ exports.update = async (req, res) => {
 
 exports.delete = async (req, res) => {
   try {
-    // const deleted = await fiscalYear.destroy({ where: { id: req.params.id } });
-
     const [updated] = await fiscalYear.update(
       { Active: false, ModifyBy: req.user.id, ModifyDate: new Date() },
-      { wher: { id: req.params.id, Active: true } }
-    )
+      { where: { id: req.params.id, Active: true } }
+    );
     if (updated) res.json({ message: "fiscalYear deactivated" });
     else res.status(404).json({ message: "fiscalYear not found" });
   } catch (err) {

@@ -79,8 +79,11 @@ exports.update = async (req, res) => {
 
 exports.delete = async (req, res) => {
   try {
-    const deleted = await ppe.destroy({ where: { id: req.params.id } });
-    if (deleted) res.json({ message: "ppe deleted" });
+    const [updated] = await ppe.update(
+      { Active: false, ModifiedBy: req.user.id, ModifiedDate: new Date() },
+      { where: { id: req.params.id, Active: true } }
+    );
+    if (updated) res.json({ message: "ppe deactivated" });
     else res.status(404).json({ message: "ppe not found" });
   } catch (err) {
     res.status(500).json({ error: err.message });

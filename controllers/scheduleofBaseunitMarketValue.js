@@ -13,7 +13,9 @@ exports.create = async (req, res) => {
 
 exports.getAll = async (req, res) => {
   try {
-    const items = await scheduleofBaseunitMarketValue.findAll();
+    const items = await scheduleofBaseunitMarketValue.findAll({
+      where: { Active: true }
+    });
     res.json(items);
   } catch (err) {
     res.status(500).json({ error: err.message });
@@ -49,8 +51,11 @@ exports.update = async (req, res) => {
 
 exports.delete = async (req, res) => {
   try {
-    const deleted = await scheduleofBaseunitMarketValue.destroy({ where: { id: req.params.id } });
-    if (deleted) res.json({ message: "scheduleofBaseunitMarketValue deleted" });
+    const [updated] = await scheduleofBaseunitMarketValue.update(
+      { Active: false, Modifiedby: req.user.id, ModifiedDate: new Date() },
+      { where: { id: req.params.id, Active: true } }
+    );
+    if (updated) res.json({ message: "scheduleofBaseunitMarketValue deactivated" });
     else res.status(404).json({ message: "scheduleofBaseunitMarketValue not found" });
   } catch (err) {
     res.status(500).json({ error: err.message });

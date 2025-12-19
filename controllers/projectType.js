@@ -13,7 +13,7 @@ exports.create = async (req, res) => {
 
 exports.getAll = async (req, res) => {
   try {
-    const items = await projectType.findAll({ where: { Acitve: true } });
+    const items = await projectType.findAll({ where: { Active: true } });
     res.json(items);
   } catch (err) {
     res.status(500).json({ error: err.message });
@@ -49,8 +49,6 @@ exports.update = async (req, res) => {
 
 exports.delete = async (req, res) => {
   try {
-    // const deleted = await projectType.destroy({ where: { id: req.params.id } });
-
     const [updated] = await projectType.update( 
       { Active: false, ModifyBy: req.user.id, ModifyDate: new Date() },
       { where: { id: req.params.id, Active: true } }
