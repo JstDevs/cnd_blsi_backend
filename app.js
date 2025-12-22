@@ -51,6 +51,7 @@ const authRoutes = require('./routes/auth');
 const accountcategoryRoutes = require('./routes/accountCategory');
 const generalservicerecipt=require("./routes/generalservicerecipt")
 const taxcertificate=require("./routes/taxcertificate")
+const communityTaxIndividualRoutes = require('./routes/communityTaxIndividual');
 const accountsubtypeRoutes = require('./routes/accountSubType');
 const accounttypeRoutes = require('./routes/accountType');
 const aparRoutes = require('./routes/apar');
@@ -280,6 +281,7 @@ app.use('/vendorcustomertype', vendorcustomertypeRoutes);
 app.use('/vendortype', vendortypeRoutes);
 app.use('/purchaseRequest', purchaseRequestRoutes);
 app.use("/community-tax",taxcertificate)
+app.use('/communityTaxIndividual', communityTaxIndividualRoutes);
 app.use("/corporate-ctc",taxcertificatecorp)
 
 app.use("/real-property-tax",realpropertytax)
