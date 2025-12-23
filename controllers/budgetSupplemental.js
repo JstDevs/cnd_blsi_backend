@@ -229,7 +229,35 @@ exports.list = async (req, res) => {
 };
 
 exports.delete = async (req, res) => {
-  res.json({ message: 'Deleted logic not implemented, same in old software' });
+  try {
+    const id = req.params.id || req.body.ID || req.body.id;
+    console.log('[budgetSupplemental.delete] called, params.id=', req.params.id, 'body=', req.body);
+    // Soft delete - set Active = false on TransactionTable
+    const userID = req.user?.id ?? 1;
+    const [updated] = await TransactionTableModel.update(
+      {
+        Active: false,
+        ModifyBy: userID,
+        ModifyDate: new Date(),
+      },
+      {
+        where: {
+          ID: id,
+          Active: true,
+          APAR: { [Op.like]: '%Budget Supplemental%' }
+        },
+      }
+    );
+
+    if (updated) {
+      res.json({ message: 'success' });
+    } else {
+      res.status(404).json({ message: 'not found or already deleted' });
+    }
+  } catch (err) {
+    console.error(err);
+    res.status(500).json({ error: err.message });
+  }
 };
 
 

@@ -244,7 +244,8 @@ exports.update = async (req, res) => {
 // SOFT DELETE: Sets Active = false instead of removing from database
 exports.delete = async (req, res) => {
   try {
-    const id = req.params.id;
+    const id = req.params.id || req.body.ID || req.body.id;
+    console.log('[budgetAllotment.delete] called, params.id=', req.params.id, 'body=', req.body);
     const userID = req.user?.id ?? 1;
 
     // Soft delete - sets Active to false in TransactionTable, record remains in database
@@ -255,8 +256,8 @@ exports.delete = async (req, res) => {
         ModifyDate: new Date(),
       },
       {
-        where: { 
-          ID: id, 
+        where: {
+          ID: id,
           Active: true,
           APAR: { [Op.like]: '%Allotment Release Order%' }
         },

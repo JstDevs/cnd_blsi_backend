@@ -10,6 +10,7 @@ router.get('/list', requireAuth, controller.getAll);
 router.get('/budgetList', requireAuth, controller.budgetList);
 router.post('/approve', requireAuth, controller.approveTransaction);
 router.post('/reject', requireAuth, controller.rejectTransaction);
+router.post('/delete', requireAuth, controller.delete);
 // router.get('/:id', requireAuth, controller.getById);
 // router.put('/:id', requireAuth, controller.update);
 router.delete('/:id', requireAuth, controller.delete);
