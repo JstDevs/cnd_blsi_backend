@@ -23,9 +23,9 @@ exports.create = async (req, res) => {
       AllorMajority,
       approvers,
     } = req.body;
-    let {NumberofApprover} = req.body;
+    let { NumberofApprover } = req.body;
 
-    if(!NumberofApprover) {
+    if (!NumberofApprover) {
       NumberofApprover = 0;
     }
 
@@ -215,6 +215,106 @@ exports.delete = async (req, res) => {
     }
   } catch (err) {
     console.error("Delete Error:", err);
+    res.status(500).json({ error: err.message });
+  }
+};
+
+exports.bulkUpdate = async (req, res) => {
+  const transaction = await sequelize.transaction();
+  try {
+    const { DocumentTypeID, sequences } = req.body;
+
+    if (!DocumentTypeID) {
+      throw new Error("DocumentTypeID is required");
+    }
+
+    // Step 1: Find existing matrices to clean up their approvers
+    const existingMatrices = await ApprovalMatrix.findAll({
+      where: { DocumentTypeID },
+      attributes: ['ID'],
+      transaction
+    });
+
+    const existingIds = existingMatrices.map(m => m.ID);
+
+    if (existingIds.length > 0) {
+      // Step 2: Delete associated approvers
+      await Approvers.destroy({
+        where: { LinkID: existingIds },
+        transaction
+      });
+
+      // Step 3: Delete the matrices themselves
+      await ApprovalMatrix.destroy({
+        where: { ID: existingIds },
+        transaction
+      });
+    }
+
+    // Step 4: Create new sequences
+    // We iterate to maintain order and get the new IDs
+    const createdSequences = [];
+
+    for (const seq of sequences) {
+      // Create the matrix header
+      // Default to 0 NumberofApprover if not present but usually UI provides it
+      // Logic from create: NumberofApprover = 0 if !NumberofApprover
+
+      const matrix = await ApprovalMatrix.create({
+        DocumentTypeID,
+        SequenceLevel: seq.SequenceLevel,
+        AllorMajority: seq.AllorMajority,
+        NumberofApprover: seq.NumberofApprover || 0,
+        Version: 1, // Reset version or manage it? Assuming 1 for now or we could check max version. 
+        // Simplicity: this whole set IS the current version.
+        Active: true,
+        CreatedBy: req.user.id,
+        CreatedDate: new Date(),
+        AlteredBy: req.user.id,
+        AlteredDate: new Date()
+      }, { transaction });
+
+      // Create associated approvers
+      if (seq.approvers && seq.approvers.length > 0) {
+        const approverRecords = seq.approvers.map(a => ({
+          LinkID: matrix.ID,
+          PositionorEmployee: a.PositionorEmployee,
+          PositionorEmployeeID: a.PositionorEmployeeID,
+          AmountFrom: a.AmountFrom,
+          AmountTo: a.AmountTo,
+        }));
+
+        await Approvers.bulkCreate(approverRecords, { transaction });
+      }
+
+      createdSequences.push(matrix);
+    }
+
+    await transaction.commit();
+
+    // Step 5: Return the full fresh list
+    // Re-query to get the structure with Approvers populated
+    const result = await ApprovalMatrix.findAll({
+      where: { DocumentTypeID },
+      include: [
+        {
+          model: Approvers,
+          as: 'Approvers',
+        },
+        {
+          model: documentType,
+          as: 'DocumentType',
+        }
+      ],
+      order: [['SequenceLevel', 'ASC']] // Ensure we return in order users expect (if SequenceLevel is numeric or sortable string)
+      // Note: sequenceLevel might be "1", "2" string. 
+    });
+
+    res.status(200).json(result);
+
+  } catch (err) {
+    await transaction.rollback();
+    console.error("Bulk Update Error:", err);
     res.status(500).json({ error: err.message });
   }
 };

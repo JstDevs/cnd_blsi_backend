@@ -8,5 +8,6 @@ router.get('/', requireAuth, controller.getAll);
 router.get('/:id', requireAuth, controller.getById);
 router.put('/:id', requireAuth, controller.update);
 router.delete('/:id', requireAuth, controller.delete);
+router.post('/bulk-update', requireAuth, controller.bulkUpdate);
 
 module.exports = router;
