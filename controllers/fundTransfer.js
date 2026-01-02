@@ -230,3 +230,36 @@ exports.rejectTransaction = async (req, res) => {
     res.status(500).json({ success: false, error: err.message });
   }
 };
+
+exports.approve = async (req, res) => {
+  const { ID: id, LinkID: linkId, Remarks: remarks } = req.body;
+
+  const t = await db.sequelize.transaction();
+  try {
+    // --- 1. Update Transaction Table to Approved ---
+    await TransactionTableModel.update(
+      { Status: 'Approved', ApprovalProgress: 100 },
+      { where: { ID: id }, transaction: t }
+    );
+
+    // --- 2. Insert into Approval Audit ---
+    await ApprovalAuditModel.create(
+      {
+        LinkID: linkId,
+        ApprovalDate: new Date(),
+        Remarks: remarks || null,
+        CreatedBy: req.user.id,
+        CreatedDate: new Date()
+      },
+      { transaction: t }
+    );
+
+    // --- 3. Commit ---
+    await t.commit();
+    res.json({ success: true, message: 'Transaction approved successfully.' });
+  } catch (err) {
+    await t.rollback();
+    console.error('Approve Transaction Error:', err);
+    res.status(500).json({ success: false, error: err.message });
+  }
+};
