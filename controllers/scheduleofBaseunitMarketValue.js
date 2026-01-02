@@ -1,4 +1,5 @@
 const { ScheduleofBaseunitMarketValue } = require('../config/database');
+const { Op } = require('sequelize');
 const scheduleofBaseunitMarketValue = ScheduleofBaseunitMarketValue;
 
 exports.create = async (req, res) => {
@@ -14,7 +15,9 @@ exports.create = async (req, res) => {
 exports.getAll = async (req, res) => {
   try {
     const items = await scheduleofBaseunitMarketValue.findAll({
-      where: { Active: true }
+      where: {
+        [Op.or]: [{ Active: true }, { Active: null }]
+      }
     });
     res.json(items);
   } catch (err) {

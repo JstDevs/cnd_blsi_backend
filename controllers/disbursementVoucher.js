@@ -16,31 +16,31 @@ const DocumentTypeModel = require('../config/database').documentType;
 const ApprovalAuditModel = require('../config/database').ApprovalAudit;
 
 const { Op, where } = require('sequelize');
-const db=require('../config/database')
+const db = require('../config/database')
 const generateLinkID = require("../utils/generateID")
 const getLatestApprovalVersion = require('../utils/getLatestApprovalVersion');
 
 
 
-    // const totalApprovers = await Approvers.count({
-    //   where: {
-    //     LinkID: trx.ApprovalLink,
-    //     ApprovalVersion: trx.ApprovalVersion
-    //   },
-    //   transaction: t
-    // });
+// const totalApprovers = await Approvers.count({
+//   where: {
+//     LinkID: trx.ApprovalLink,
+//     ApprovalVersion: trx.ApprovalVersion
+//   },
+//   transaction: t
+// });
 
-    // const alreadyApproved = await ApprovalAudit.count({
-    //   where: {
-    //     LinkID: trx.ApprovalLink,
-    //     SequenceOrder: trx.ApprovalProgress - 1,
-    //     InvoiceLink: trx.ID,
-    //     ApprovalVersion: trx.ApprovalVersion
-    //   },
-    //   transaction: t
-    // });
+// const alreadyApproved = await ApprovalAudit.count({
+//   where: {
+//     LinkID: trx.ApprovalLink,
+//     SequenceOrder: trx.ApprovalProgress - 1,
+//     InvoiceLink: trx.ID,
+//     ApprovalVersion: trx.ApprovalVersion
+//   },
+//   transaction: t
+// });
 
-    // const numberOfApproverPerSequence = (totalApprovers - 1) - alreadyApproved;
+// const numberOfApproverPerSequence = (totalApprovers - 1) - alreadyApproved;
 
 
 // exports.create = async (req, res) => {
@@ -71,7 +71,7 @@ const getLatestApprovalVersion = require('../utils/getLatestApprovalVersion');
 //             Contras,
 
 //         } = req.body;
-        
+
 //         let { 
 //           VendorID,
 //           CustomerID,
@@ -96,7 +96,7 @@ const getLatestApprovalVersion = require('../utils/getLatestApprovalVersion');
 //         const LinkID = generateLinkID();
 
 //         const latestApprovalVersion = await getLatestApprovalVersion('Disbursement Voucher');
-        
+
 //         const transactionRecord = await TransactionTableModel.create({
 //             DocumentTypeID: 14,
 //             LinkID,
@@ -213,7 +213,7 @@ const getLatestApprovalVersion = require('../utils/getLatestApprovalVersion');
 //         }
 
 
-        
+
 //         // Add new files
 //         if (req.files && req.files.length > 0) {
 //             const blobAttachments = req.files.map((file) => ({
@@ -229,7 +229,7 @@ const getLatestApprovalVersion = require('../utils/getLatestApprovalVersion');
 
 //         await t.commit();
 
-        
+
 
 //         res.status(201).json("created");
 //     } catch (err) {
@@ -243,7 +243,7 @@ exports.save = async (req, res) => {
   const t = await db.sequelize.transaction();
   try {
     const parsedFields = {};
-    
+
     // Reconstruct Attachments array from fields like Attachments[0].ID starts
     const attachments = [];
     for (const key in req.body) {
@@ -258,7 +258,7 @@ exports.save = async (req, res) => {
     }
     parsedFields.Attachments = attachments;
     // Reconstruct Attachments array from fields like Attachments[0].ID ends
-    
+
     for (const key in req.body) {
       try {
         parsedFields[key] = JSON.parse(req.body[key]);
@@ -272,8 +272,8 @@ exports.save = async (req, res) => {
     } = parsedFields;
 
     const data = parsedFields;
-    
-    let { 
+
+    let {
       VendorID,
       CustomerID,
       EmployeeID,
@@ -287,12 +287,12 @@ exports.save = async (req, res) => {
     FundsID = Number(FundsID) || 0;
 
     const documentTypeID = 14;
-    
+
     let IsNew = '';
-    if((data.IsNew == "true") || (data.IsNew === true) || (data.IsNew == '1') || (data.IsNew == 1)) {
+    if ((data.IsNew == "true") || (data.IsNew === true) || (data.IsNew == '1') || (data.IsNew == 1)) {
       IsNew = true;
     }
-    else if((data.IsNew == "false") || (data.IsNew === false) || (data.IsNew == '0') || (data.IsNew == 0)) {
+    else if ((data.IsNew == "false") || (data.IsNew === false) || (data.IsNew == '0') || (data.IsNew == 0)) {
       IsNew = false;
     }
     else {
@@ -300,7 +300,7 @@ exports.save = async (req, res) => {
     }
 
     let IsStandaloneRequest = '';
-    if((data.IsStandaloneRequest == "true") || (data.IsStandaloneRequest === true) || (data.IsStandaloneRequest == '1') || (data.IsStandaloneRequest == 1)) {
+    if ((data.IsStandaloneRequest == "true") || (data.IsStandaloneRequest === true) || (data.IsStandaloneRequest == '1') || (data.IsStandaloneRequest == 1)) {
       IsStandaloneRequest = true;
     }
     else {
@@ -377,7 +377,7 @@ exports.save = async (req, res) => {
       });
       let credit = 0;
       let debit = 0;
-      if(!account) {
+      if (!account) {
         throw new Error(`Budget with ID ${item.ChargeAccountID} not found`);
       }
       if (account.ChartofAccountsModel?.NormalBalance === 'Debit') debit = item.subtotal;
@@ -460,7 +460,7 @@ exports.save = async (req, res) => {
 
 
     // Update Obligation Status
-    if(!IsStandaloneRequest) {
+    if (!IsStandaloneRequest) {
       await TransactionTableModel.update(
         { Status: 'Posted, Disbursement Pending' },
         { where: { LinkID: data.OBR_LinkID }, transaction: t }
@@ -485,14 +485,14 @@ exports.selectListForDV = async (req, res) => {
     const reqType = req.query.requestType || '';
 
     let apar = 'N/A';
-    if(reqType == 'Obligation Request') {
+    if (reqType == 'Obligation Request') {
       apar = 'Obligation Request';
     }
-    else if(reqType == 'FURS') {
+    else if (reqType == 'FURS') {
       apar = 'Fund Utilization Request';
     }
     else {
-      throw new Error('Invalid reqType specified'); 
+      throw new Error('Invalid reqType specified');
     }
 
     let whereCondition = {
@@ -583,7 +583,7 @@ exports.getAll = async (req, res) => {
         [Op.like]: '%Disbursement Voucher%'
       }
     };
-    
+
     let whereClause = {};
     if (selectedDepartmentID && selectedDepartmentID !== '') {
       // Filter by department ID if not "All"
@@ -673,7 +673,7 @@ exports.getById = async (req, res) => {
 //       Items,
 //       Contras
 //     } = req.body;
-    
+
 //     let { 
 //       VendorID,
 //       CustomerID,

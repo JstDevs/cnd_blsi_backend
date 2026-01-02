@@ -1,15 +1,6 @@
 const { PropertyTaxDeclaration, TaxDeclarationProperty, sequelize } = require('../config/database');
+const { Op } = require('sequelize');
 const propertyTaxDeclaration = PropertyTaxDeclaration;
-
-// exports.create = async (req, res) => {
-//   try {
-//     const { T_D_No, PropertyID, OwnerID, OwnerTIN, OwnerAddress, OwnerTelephoneNumber, BeneficialorAdminUserID, BeneficialorAdminTIN, BeneficialorAdminAddress, BeneficialorAdminTelephoneNumber, OCT_TCT_CLOA_Number, CCT, LotNumber, BlockNumber, Dated, North, East, South, West, KindofProperty, Description, AssessedValue, AmountInWords, Taxable, SurveyNumber, Type, Classification, ActualUse, Storeys, MarketValue, CancelTDNumber, PreviousAssessedValue, Createdby, CreatedDate, Class, AssessmentLevel, Modifiedby, Modifieddate, Active, GeneralRevision } = req.body;
-//     const item = await propertyTaxDeclaration.create({ T_D_No, PropertyID, OwnerID, OwnerTIN, OwnerAddress, OwnerTelephoneNumber, BeneficialorAdminUserID, BeneficialorAdminTIN, BeneficialorAdminAddress, BeneficialorAdminTelephoneNumber, OCT_TCT_CLOA_Number, CCT, LotNumber, BlockNumber, Dated, North, East, South, West, KindofProperty, Description, AssessedValue, AmountInWords, Taxable, SurveyNumber, Type, Classification, ActualUse, Storeys, MarketValue, CancelTDNumber, PreviousAssessedValue, Createdby, CreatedDate, Class, AssessmentLevel, Modifiedby, Modifieddate, Active, GeneralRevision });
-//     res.status(201).json(item);
-//   } catch (err) {
-//     res.status(500).json({ error: err.message });
-//   }
-// };
 
 exports.create = async (req, res) => {
   const t = await sequelize.transaction(); // Start a transaction
@@ -86,19 +77,14 @@ exports.create = async (req, res) => {
   }
 };
 
-
-// exports.getAll = async (req, res) => {
-//   try {
-//     const items = await propertyTaxDeclaration.findAll();
-//     res.json(items);
-//   } catch (err) {
-//     res.status(500).json({ error: err.message });
-//   }
-// };
 exports.getAll = async (req, res) => {
   try {
-    
-    const allDeclarations = await propertyTaxDeclaration.findAll({ where: {Active: true} });
+
+    const allDeclarations = await propertyTaxDeclaration.findAll({
+      where: {
+        [Op.or]: [{ Active: true }, { Active: null }]
+      }
+    });
 
     const fullData = await Promise.all(
       allDeclarations.map(async (item) => {
@@ -106,7 +92,6 @@ exports.getAll = async (req, res) => {
 
         const assessmentRows = await TaxDeclarationProperty.findAll({
           where: {
-            Active: true,
             T_D_No: itemPlain.T_D_No,
             PropertyID: itemPlain.PropertyID,
           },
@@ -215,7 +200,7 @@ exports.update = async (req, res) => {
     }
 
     await t.commit(); // Commit transaction
-    
+
 
 
     // Fetch the updated main record and its related assessment rows

@@ -1,4 +1,4 @@
-const db=require('../config/database')
+const db = require('../config/database')
 const DocumentTypeModel = require('../config/database').documentType;
 const BudgetModel = require('../config/database').Budget;
 const TransactionTableModel = require('../config/database').TransactionTable;
@@ -20,7 +20,7 @@ exports.save = async (req, res) => {
   try {
     const parsedFields = {};
 
-    
+
     // Reconstruct Attachments array from fields like Attachments[0].ID starts
     const attachments = [];
     for (const key in req.body) {
@@ -36,7 +36,7 @@ exports.save = async (req, res) => {
     parsedFields.Attachments = attachments;
     // Reconstruct Attachments array from fields like Attachments[0].ID ends
 
-    
+
     for (const key in req.body) {
       try {
         parsedFields[key] = JSON.parse(req.body[key]);
@@ -50,12 +50,12 @@ exports.save = async (req, res) => {
     } = parsedFields;
 
     const data = parsedFields;
-    
+
     let IsNew = '';
-    if((data.IsNew == "true") || (data.IsNew === true) || (data.IsNew == '1') || (data.IsNew == 1)) {
+    if ((data.IsNew == "true") || (data.IsNew === true) || (data.IsNew == '1') || (data.IsNew == 1)) {
       IsNew = true;
     }
-    else if((data.IsNew == "false") || (data.IsNew === false) || (data.IsNew == '0') || (data.IsNew == 0)) {
+    else if ((data.IsNew == "false") || (data.IsNew === false) || (data.IsNew == '0') || (data.IsNew == 0)) {
       IsNew = false;
     }
     else {
@@ -66,7 +66,7 @@ exports.save = async (req, res) => {
     const amount = parseFloat(data.AllotmentAmount);
 
     const LinkID = (IsNew) ? generateLinkID() : data.LinkID;
-    const latestapprovalversion=await getLatestApprovalVersion('Allotment Release Order');
+    const latestapprovalversion = await getLatestApprovalVersion('Allotment Release Order');
 
     let invoiceText = '';
 
@@ -118,7 +118,7 @@ exports.save = async (req, res) => {
       });
     }
 
-    
+
     // Attachment handling
     const existingIDs = Attachments.filter(att => att.ID).map(att => att.ID);
 
