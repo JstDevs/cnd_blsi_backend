@@ -1,4 +1,4 @@
-const db=require('../config/database')
+const db = require('../config/database')
 const BudgetModel = require('../config/database').Budget;
 const DocumentTypeModel = require('../config/database').documentType;
 const TransactionTableModel = require('../config/database').TransactionTable;
@@ -20,7 +20,7 @@ exports.save = async (req, res) => {
   const t = await db.sequelize.transaction();
   try {
     const parsedFields = {};
-    
+
     // Reconstruct Attachments array from fields like Attachments[0].ID starts
     const attachments = [];
     for (const key in req.body) {
@@ -35,7 +35,7 @@ exports.save = async (req, res) => {
     }
     parsedFields.Attachments = attachments;
     // Reconstruct Attachments array from fields like Attachments[0].ID ends
-    
+
     for (const key in req.body) {
       try {
         parsedFields[key] = JSON.parse(req.body[key]);
@@ -51,10 +51,10 @@ exports.save = async (req, res) => {
     const data = parsedFields;
 
     let IsNew = '';
-    if((data.IsNew == "true") || (data.IsNew === true) || (data.IsNew == '1') || (data.IsNew == 1)) {
+    if ((data.IsNew == "true") || (data.IsNew === true) || (data.IsNew == '1') || (data.IsNew == 1)) {
       IsNew = true;
     }
-    else if((data.IsNew == "false") || (data.IsNew === false) || (data.IsNew == '0') || (data.IsNew == 0)) {
+    else if ((data.IsNew == "false") || (data.IsNew === false) || (data.IsNew == '0') || (data.IsNew == 0)) {
       IsNew = false;
     }
     else {
@@ -71,7 +71,7 @@ exports.save = async (req, res) => {
     const doc = await DocumentTypeModel.findByPk(docTypeID, { transaction: t });
     if (!doc) throw new Error(`Document type ID ${docTypeID} not found.`);
 
-    const invoiceText = `${doc.Prefix}-${doc.CurrentNumber}-${doc.Suffix}`;
+    const invoiceText = `${doc.Prefix}-${String(doc.CurrentNumber).padStart(5, '0')}-${doc.Suffix}`;
     const approvalVersion = await getLatestApprovalVersion('Budget Transfer');
 
     if (IsNew) {
@@ -114,7 +114,7 @@ exports.save = async (req, res) => {
       });
     }
 
-    
+
     // Delete removed attachments (if applicable)
     const existingIDs = Attachments.filter(att => att.ID).map(att => att.ID);
     if (!IsNew && existingIDs.length > 0) {
@@ -253,8 +253,8 @@ exports.delete = async (req, res) => {
         ModifyDate: new Date(),
       },
       {
-        where: { 
-          ID: id, 
+        where: {
+          ID: id,
           Active: true,
           APAR: { [Op.like]: '%Budget Transfer%' }
         },

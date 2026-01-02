@@ -60,7 +60,7 @@ exports.save = async (req, res) => {
     if (!doc) throw new Error(`Document type ID ${docTypeID} not found.`);
 
     const suffix = doc.Suffix ? `-${doc.Suffix}` : '';
-    const invoiceText = `${doc.Prefix}-${doc.CurrentNumber}${suffix}`;
+    const invoiceText = `${doc.Prefix}-${String(doc.CurrentNumber).padStart(5, '0')}${suffix}`;
     const approvalVersion = await getLatestApprovalVersion('Fund Transfer');
 
     // Insert Transaction Table Record

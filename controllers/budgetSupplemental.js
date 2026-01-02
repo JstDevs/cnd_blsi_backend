@@ -1,4 +1,4 @@
-const db=require('../config/database')
+const db = require('../config/database')
 const BudgetModel = require('../config/database').Budget;
 const DocumentTypeModel = require('../config/database').documentType;
 const TransactionTableModel = require('../config/database').TransactionTable;
@@ -20,7 +20,7 @@ exports.save = async (req, res) => {
   const t = await db.sequelize.transaction();
   try {
     const parsedFields = {};
-    
+
     // Reconstruct Attachments array from fields like Attachments[0].ID starts
     const attachments = [];
     for (const key in req.body) {
@@ -35,7 +35,7 @@ exports.save = async (req, res) => {
     }
     parsedFields.Attachments = attachments;
     // Reconstruct Attachments array from fields like Attachments[0].ID ends
-    
+
     for (const key in req.body) {
       try {
         parsedFields[key] = JSON.parse(req.body[key]);
@@ -51,10 +51,10 @@ exports.save = async (req, res) => {
     const data = parsedFields;
 
     let IsNew = '';
-    if((data.IsNew == "true") || (data.IsNew === true) || (data.IsNew == '1') || (data.IsNew == 1)) {
+    if ((data.IsNew == "true") || (data.IsNew === true) || (data.IsNew == '1') || (data.IsNew == 1)) {
       IsNew = true;
     }
-    else if((data.IsNew == "false") || (data.IsNew === false) || (data.IsNew == '0') || (data.IsNew == 0)) {
+    else if ((data.IsNew == "false") || (data.IsNew === false) || (data.IsNew == '0') || (data.IsNew == 0)) {
       IsNew = false;
     }
     else {
@@ -69,7 +69,7 @@ exports.save = async (req, res) => {
     const doc = await DocumentTypeModel.findByPk(docTypeID, { transaction: t });
     if (!doc) throw new Error(`Document type ID ${docTypeID} not found.`);
 
-    const invoiceText = `${doc.Prefix}-${doc.CurrentNumber}-${doc.Suffix}`;
+    const invoiceText = `${doc.Prefix}-${String(doc.CurrentNumber).padStart(5, '0')}-${doc.Suffix}`;
     const approvalVersion = await getLatestApprovalVersion('Budget Supplemental');
 
     if (IsNew) {
@@ -292,7 +292,7 @@ exports.recover = async (req, res) => {
 
 
 exports.approveTransaction = async (req, res) => {
-  const { 
+  const {
     id,                   // Transaction ID
     approvalProgress,     // approvalProgress
     varApprovalLink,      // approval link
@@ -365,7 +365,7 @@ exports.approveTransaction = async (req, res) => {
 };
 
 exports.rejectTransaction = async (req, res) => {
-  const { 
+  const {
     ID: id,               // Transaction ID (dgList.Item(0, row).Value)
     LinkID: varApprovalLink,  // Link ID
     Reason: reasonForRejection,

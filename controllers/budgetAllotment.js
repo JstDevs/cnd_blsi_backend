@@ -75,7 +75,7 @@ exports.save = async (req, res) => {
       const doc = await DocumentTypeModel.findByPk(20, { transaction: t });
       if (!doc) throw new Error('Document type ID 20 not found.');
 
-      invoiceText = `${doc.Prefix}-${doc.CurrentNumber}-${doc.Suffix}`;
+      invoiceText = `${doc.Prefix}-${String(doc.CurrentNumber).padStart(5, '0')}-${doc.Suffix}`;
 
       // Step 2: Insert into TransactionTable
       await TransactionTableModel.create({
