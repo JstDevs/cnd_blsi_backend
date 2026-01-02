@@ -1,4 +1,4 @@
-const db=require('../config/database')
+const db = require('../config/database')
 const BudgetModel = require('../config/database').Budget;
 const DocumentTypeModel = require('../config/database').documentType;
 const TransactionTableModel = require('../config/database').TransactionTable;
@@ -20,7 +20,7 @@ exports.save = async (req, res) => {
   const t = await db.sequelize.transaction();
   try {
     const parsedFields = {};
-    
+
     // Reconstruct Attachments array from fields like Attachments[0].ID starts
     const attachments = [];
     for (const key in req.body) {
@@ -59,7 +59,8 @@ exports.save = async (req, res) => {
     const doc = await DocumentTypeModel.findByPk(docTypeID, { transaction: t });
     if (!doc) throw new Error(`Document type ID ${docTypeID} not found.`);
 
-    const invoiceText = `${doc.Prefix}-${doc.CurrentNumber}-${doc.Suffix}`;
+    const suffix = doc.Suffix ? `-${doc.Suffix}` : '';
+    const invoiceText = `${doc.Prefix}-${doc.CurrentNumber}${suffix}`;
     const approvalVersion = await getLatestApprovalVersion('Fund Transfer');
 
     // Insert Transaction Table Record
@@ -88,7 +89,7 @@ exports.save = async (req, res) => {
       { where: { ID: docTypeID }, transaction: t }
     );
 
-    
+
     // Attachment handling
     const existingIDs = Attachments.filter(att => att.ID).map(att => att.ID);
 
@@ -179,8 +180,8 @@ exports.delete = async (req, res) => {
         ModifyDate: new Date(),
       },
       {
-        where: { 
-          ID: id, 
+        where: {
+          ID: id,
           Active: true,
           APAR: { [Op.like]: '%Fund Transfer%' }
         },
