@@ -39,7 +39,7 @@ exports.save = async (req, res) => {
     for (const key in req.body) {
       try {
         parsedFields[key] = JSON.parse(req.body[key]);
-      } catch {
+      } catch (e) {
         parsedFields[key] = req.body[key];
       }
     }
