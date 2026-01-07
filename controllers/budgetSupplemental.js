@@ -380,8 +380,8 @@ exports.approveTransaction = async (req, res) => {
       { transaction: t }
     );
 
-    // Update Budget table: increment Supplemental
-    if (varBudgetID) {
+    // Update Budget table: ONLY if fully approved
+    if (newStatus === 'Approved' && varBudgetID) {
       const transaction = await TransactionTableModel.findByPk(id, { transaction: t });
       const supplementalAmount = parseFloat(transaction?.Total || 0);
 

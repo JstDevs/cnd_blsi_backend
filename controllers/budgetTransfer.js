@@ -365,54 +365,57 @@ exports.approveTransaction = async (req, res) => {
       { transaction: t }
     );
 
-    // Update Budget table: handle transfer between budgets
-    const transaction = await TransactionTableModel.findByPk(id, { transaction: t });
-    if (!transaction) throw new Error(`Transaction ID ${id} not found.`);
+    // --- UPDATE Budget Table ONLY IF FINAL APPROVAL ---
+    if (newStatus === 'Approved') {
+      // Update Budget table: handle transfer between budgets
+      const transaction = await TransactionTableModel.findByPk(id, { transaction: t });
+      if (!transaction) throw new Error(`Transaction ID ${id} not found.`);
 
-    const sourceBudgetID = varBudgetID || transaction.BudgetID;
-    const targetBudgetID = transaction.TargetID;
-    const transferAmount = parseFloat(transaction.Total || 0);
+      const sourceBudgetID = varBudgetID || transaction.BudgetID;
+      const targetBudgetID = transaction.TargetID;
+      const transferAmount = parseFloat(transaction.Total || 0);
 
-    console.log('[budgetTransfer.approveTransaction] Updating budgets:', { sourceBudgetID, targetBudgetID, transferAmount });
+      console.log('[budgetTransfer.approveTransaction] Final approval reached. Updating budgets:', { sourceBudgetID, targetBudgetID, transferAmount });
 
-    const updateBudgetBalances = async (budgetID, amountDelta) => {
-      const budget = await BudgetModel.findByPk(budgetID, { transaction: t });
-      if (budget) {
-        const currentTransfer = parseFloat(budget.Transfer || 0);
-        const newTransfer = currentTransfer + amountDelta;
+      const updateBudgetBalances = async (budgetID, amountDelta) => {
+        const budget = await BudgetModel.findByPk(budgetID, { transaction: t });
+        if (budget) {
+          const currentTransfer = parseFloat(budget.Transfer || 0);
+          const newTransfer = currentTransfer + amountDelta;
 
-        const appropriation = parseFloat(budget.Appropriation || 0);
-        const supplemental = parseFloat(budget.Supplemental || 0);
-        const released = parseFloat(budget.Released || 0);
+          const appropriation = parseFloat(budget.Appropriation || 0);
+          const supplemental = parseFloat(budget.Supplemental || 0);
+          const released = parseFloat(budget.Released || 0);
 
-        // Adjusted Appropriation = Appropriation + Supplemental + Transfer
-        const newAdjusted = appropriation + supplemental + newTransfer;
-        const newBalance = newAdjusted - released;
+          // Adjusted Appropriation = Appropriation + Supplemental + Transfer
+          const newAdjusted = appropriation + supplemental + newTransfer;
+          const newBalance = newAdjusted - released;
 
-        await BudgetModel.update(
-          {
-            Transfer: newTransfer,
-            AllotmentBalance: newBalance,
-            AppropriationBalance: newBalance,
-            ModifyBy: strUser,
-            ModifyDate: new Date()
-          },
-          { where: { ID: budgetID }, transaction: t }
-        );
-        console.log(`[budgetTransfer.approveTransaction] Budget ${budgetID} updated. New Transfer: ${newTransfer}, New Balance: ${newBalance}`);
-      } else {
-        console.warn(`[budgetTransfer.approveTransaction] Budget ${budgetID} not found.`);
+          await BudgetModel.update(
+            {
+              Transfer: newTransfer,
+              AllotmentBalance: newBalance,
+              AppropriationBalance: newBalance,
+              ModifyBy: strUser,
+              ModifyDate: new Date()
+            },
+            { where: { ID: budgetID }, transaction: t }
+          );
+          console.log(`[budgetTransfer.approveTransaction] Budget ${budgetID} updated. New Transfer: ${newTransfer}, New Balance: ${newBalance}`);
+        } else {
+          console.warn(`[budgetTransfer.approveTransaction] Budget ${budgetID} not found.`);
+        }
+      };
+
+      // Update source budget (deduct)
+      if (sourceBudgetID) {
+        await updateBudgetBalances(sourceBudgetID, -transferAmount);
       }
-    };
 
-    // Update source budget (deduct)
-    if (sourceBudgetID) {
-      await updateBudgetBalances(sourceBudgetID, -transferAmount);
-    }
-
-    // Update target budget (add)
-    if (targetBudgetID) {
-      await updateBudgetBalances(targetBudgetID, transferAmount);
+      // Update target budget (add)
+      if (targetBudgetID) {
+        await updateBudgetBalances(targetBudgetID, transferAmount);
+      }
     }
 
     await t.commit();

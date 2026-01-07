@@ -348,9 +348,18 @@ exports.approveTransaction = async (req, res) => {
 
   const t = await db.sequelize.transaction();
   try {
-    // Update approval progress and mark Approved
+    // Determine new status based on approval progress and expected approvers
+    let newStatus = 'Requested';
+    if (numberOfApproverPerSequence) {
+      if (approvalProgress >= numberOfApproverPerSequence) newStatus = 'Approved';
+    } else {
+      // Fallback if numberOfApproverPerSequence is not provided: assume single-approver or already approved logic
+      if ((approvalProgress || 0) > 0) newStatus = 'Approved';
+    }
+
+    // Update approval progress and Status
     await TransactionTableModel.update(
-      { ApprovalProgress: approvalProgress, Status: 'Approved' },
+      { ApprovalProgress: approvalProgress, Status: newStatus },
       { where: { ID: txnId }, transaction: t }
     );
 
@@ -372,35 +381,34 @@ exports.approveTransaction = async (req, res) => {
       { transaction: t }
     );
 
-    // Update Budget table: increment Released and recalculate AllotmentBalance
-    console.log('[BudgetAllotment.approveTransaction] Updating Budget table for BudgetID:', varBudgetID);
+    // --- UPDATE Budget Table ONLY IF FINAL APPROVAL ---
+    if (newStatus === 'Approved') {
+      // Get the transaction to retrieve BudgetID and Amount
+      const transaction = await TransactionTableModel.findByPk(txnId, { transaction: t });
+      const bID = varBudgetID || transaction?.BudgetID;
+      const allotmentAmount = parseFloat(transaction?.Total || 0);
 
-    // Get the transaction to retrieve BudgetID if not provided
-    const transaction = await TransactionTableModel.findByPk(txnId, { transaction: t });
-    const budgetID = varBudgetID || transaction?.BudgetID;
-    const allotmentAmount = transaction?.Total || 0;
+      if (bID) {
+        console.log('[BudgetAllotment.approveTransaction] Final approval reached. Updating Budget table for BudgetID:', bID);
+        const budget = await BudgetModel.findByPk(bID, { transaction: t });
+        if (budget) {
+          const currentReleased = parseFloat(budget.Released || 0);
+          const newReleased = currentReleased + allotmentAmount;
 
-    console.log('[BudgetAllotment.approveTransaction] Retrieved BudgetID:', budgetID, 'Amount:', allotmentAmount);
+          const appropriation = parseFloat(budget.Appropriation || 0);
+          const newAllotmentBalance = appropriation - newReleased;
 
-    if (budgetID) {
-      const budget = await BudgetModel.findByPk(budgetID, { transaction: t });
-      if (budget) {
-        const currentReleased = parseFloat(budget.Released || 0);
-        const newReleased = currentReleased + parseFloat(allotmentAmount);
-
-        const appropriation = parseFloat(budget.Appropriation || 0);
-        const newAllotmentBalance = appropriation - newReleased;
-
-        await BudgetModel.update(
-          {
-            Released: newReleased,
-            AllotmentBalance: newAllotmentBalance,
-            ModifyBy: strUser,
-            ModifyDate: new Date()
-          },
-          { where: { ID: budgetID }, transaction: t }
-        );
-        console.log('[BudgetAllotment.approveTransaction] Budget updated:', { newReleased, newAllotmentBalance });
+          await BudgetModel.update(
+            {
+              Released: newReleased,
+              AllotmentBalance: newAllotmentBalance,
+              ModifyBy: strUser,
+              ModifyDate: new Date()
+            },
+            { where: { ID: bID }, transaction: t }
+          );
+          console.log('[BudgetAllotment.approveTransaction] Budget updated:', { newReleased, newAllotmentBalance });
+        }
       }
     }
 
