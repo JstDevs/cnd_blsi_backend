@@ -63,7 +63,9 @@ exports.save = async (req, res) => {
 
     const userID = req.user.id;
 
-    const amount = parseFloat(data.Transfer);
+    const amountStr = String(data.Transfer || 0).replace(/,/g, '');
+    const amount = parseFloat(amountStr);
+    console.log('[budgetTransfer.save] data.Transfer:', data.Transfer, 'parsed amount:', amount);
 
     const LinkID = IsNew ? generateLinkID() : data.LinkID;
 
@@ -302,26 +304,47 @@ exports.recover = async (req, res) => {
 };
 
 exports.approveTransaction = async (req, res) => {
-  const {
-    id,
-    ID,
-    approvalProgress,
-    varApprovalLink,
-    varLinkID,
-    approvalOrder,
-    numberOfApproverPerSequence,
-    userEmployeeID,
-    strUser,
-    varTransactionApprovalVersion,
-    varBudgetID
-  } = req.body;
+  const rawBody = req.body || {};
 
-  const txnId = ID || id;
+  // Accept multiple possible field names from frontend variations
+  const id = rawBody.id ?? rawBody.ID ?? rawBody.transactionId ?? rawBody.TransactionID ?? rawBody.linkId ?? rawBody.LinkID ?? (rawBody.data && (rawBody.data.id ?? rawBody.data.ID));
+  let approvalProgress = rawBody.approvalProgress ?? rawBody.ApprovalProgress ?? rawBody.approval_progress ?? (rawBody.data && rawBody.data.approvalProgress) ?? rawBody.progress;
+  const varApprovalLink = rawBody.varApprovalLink ?? rawBody.linkId ?? rawBody.linkID ?? rawBody.LinkID ?? rawBody.approvalLink ?? (rawBody.data && rawBody.data.varApprovalLink);
+  const varLinkID = rawBody.varLinkID ?? rawBody.invoiceLink ?? rawBody.invoiceLinkId ?? rawBody.varLinkId ?? (rawBody.data && rawBody.data.varLinkID);
+  const approvalOrder = rawBody.approvalOrder ?? rawBody.SequenceOrder ?? rawBody.sequenceOrder ?? (rawBody.data && rawBody.data.approvalOrder);
+  const numberOfApproverPerSequence = rawBody.numberOfApproverPerSequence ?? rawBody.approvers ?? rawBody.numberOfApprovers ?? (rawBody.data && rawBody.data.numberOfApproverPerSequence);
+  const userEmployeeID = rawBody.userEmployeeID ?? rawBody.EmployeeID ?? rawBody.employeeId ?? (rawBody.data && rawBody.data.userEmployeeID) ?? req.user?.id;
+  const strUser = rawBody.strUser ?? rawBody.createdBy ?? rawBody.userName ?? rawBody.username ?? req.user?.id;
+  const varTransactionApprovalVersion = rawBody.varTransactionApprovalVersion ?? rawBody.approvalVersion ?? rawBody.ApprovalVersion ?? (rawBody.data && rawBody.data.varTransactionApprovalVersion);
+  const varBudgetID = rawBody.varBudgetID ?? rawBody.BudgetID ?? rawBody.budgetId ?? (rawBody.data && rawBody.data.varBudgetID);
+
+  console.info('[budgetTransfer.approveTransaction] raw body:', rawBody);
+  console.info('[budgetTransfer.approveTransaction] normalized payload:', {
+    id,
+    approvalProgress,
+    varBudgetID
+  });
+
+  if (!id) return res.status(400).json({ success: false, error: 'Missing required field: id' });
+
+  // If frontend didn't supply approvalProgress, default to 1
+  if (approvalProgress === undefined || approvalProgress === null) {
+    approvalProgress = 1;
+  }
+
   const t = await db.sequelize.transaction();
   try {
+    // Determine new status based on approval progress
+    let newStatus = 'Requested';
+    if (numberOfApproverPerSequence) {
+      if (approvalProgress >= numberOfApproverPerSequence) newStatus = 'Approved';
+    } else {
+      if ((approvalProgress || 0) > 0) newStatus = 'Approved';
+    }
+
     await TransactionTableModel.update(
-      { ApprovalProgress: approvalProgress, Status: 'Approved' },
-      { where: { ID: txnId }, transaction: t }
+      { ApprovalProgress: approvalProgress, Status: newStatus },
+      { where: { ID: id }, transaction: t }
     );
 
     await ApprovalAuditModel.create(
@@ -343,51 +366,60 @@ exports.approveTransaction = async (req, res) => {
     );
 
     // Update Budget table: handle transfer between budgets
-    if (varBudgetID) {
-      const transaction = await TransactionTableModel.findByPk(txnId, { transaction: t });
-      const transferAmount = parseFloat(transaction?.Total || 0);
-      const targetBudgetID = transaction?.TargetID;
+    const transaction = await TransactionTableModel.findByPk(id, { transaction: t });
+    if (!transaction) throw new Error(`Transaction ID ${id} not found.`);
 
-      // Update source budget (deduct from Transfer)
-      const sourceBudget = await BudgetModel.findByPk(varBudgetID, { transaction: t });
-      if (sourceBudget) {
-        const currentTransfer = parseFloat(sourceBudget.Transfer || 0);
-        const newTransfer = currentTransfer - transferAmount;
+    const sourceBudgetID = varBudgetID || transaction.BudgetID;
+    const targetBudgetID = transaction.TargetID;
+    const transferAmount = parseFloat(transaction.Total || 0);
+
+    console.log('[budgetTransfer.approveTransaction] Updating budgets:', { sourceBudgetID, targetBudgetID, transferAmount });
+
+    const updateBudgetBalances = async (budgetID, amountDelta) => {
+      const budget = await BudgetModel.findByPk(budgetID, { transaction: t });
+      if (budget) {
+        const currentTransfer = parseFloat(budget.Transfer || 0);
+        const newTransfer = currentTransfer + amountDelta;
+
+        const appropriation = parseFloat(budget.Appropriation || 0);
+        const supplemental = parseFloat(budget.Supplemental || 0);
+        const released = parseFloat(budget.Released || 0);
+
+        // Adjusted Appropriation = Appropriation + Supplemental + Transfer
+        const newAdjusted = appropriation + supplemental + newTransfer;
+        const newBalance = newAdjusted - released;
 
         await BudgetModel.update(
           {
             Transfer: newTransfer,
+            AllotmentBalance: newBalance,
+            AppropriationBalance: newBalance,
             ModifyBy: strUser,
             ModifyDate: new Date()
           },
-          { where: { ID: varBudgetID }, transaction: t }
+          { where: { ID: budgetID }, transaction: t }
         );
+        console.log(`[budgetTransfer.approveTransaction] Budget ${budgetID} updated. New Transfer: ${newTransfer}, New Balance: ${newBalance}`);
+      } else {
+        console.warn(`[budgetTransfer.approveTransaction] Budget ${budgetID} not found.`);
       }
+    };
 
-      // Update target budget (add to Transfer)
-      if (targetBudgetID) {
-        const targetBudget = await BudgetModel.findByPk(targetBudgetID, { transaction: t });
-        if (targetBudget) {
-          const currentTransfer = parseFloat(targetBudget.Transfer || 0);
-          const newTransfer = currentTransfer + transferAmount;
+    // Update source budget (deduct)
+    if (sourceBudgetID) {
+      await updateBudgetBalances(sourceBudgetID, -transferAmount);
+    }
 
-          await BudgetModel.update(
-            {
-              Transfer: newTransfer,
-              ModifyBy: strUser,
-              ModifyDate: new Date()
-            },
-            { where: { ID: targetBudgetID }, transaction: t }
-          );
-        }
-      }
+    // Update target budget (add)
+    if (targetBudgetID) {
+      await updateBudgetBalances(targetBudgetID, transferAmount);
     }
 
     await t.commit();
     res.json({ success: true, message: 'Data saved successfully.' });
   } catch (err) {
-    await t.rollback();
-    console.error(err);
+    if (t) await t.rollback();
+    console.error('[budgetTransfer.approveTransaction] Error:', err);
     res.status(500).json({ success: false, error: err.message });
   }
 };

@@ -255,7 +255,51 @@ exports.approve = async (req, res) => {
       { transaction: t }
     );
 
-    // --- 3. Commit ---
+    // --- 3. Update Fund balances ---
+    const transaction = await TransactionTableModel.findByPk(id, { transaction: t });
+    if (!transaction) throw new Error(`Transaction ID ${id} not found.`);
+
+    const sourceFundID = transaction.FundsID;
+    const targetFundID = transaction.TargetID;
+    const transferAmount = parseFloat(transaction.Total || 0);
+
+    console.log('[fundTransfer.approve] Updating funds:', { sourceFundID, targetFundID, transferAmount });
+
+    const updateFundBalances = async (fundID, amountDelta) => {
+      const fund = await FundModel.findByPk(fundID, { transaction: t });
+      if (fund) {
+        const currentBalance = parseFloat(fund.Balance || 0);
+        const currentTotal = parseFloat(fund.Total || 0);
+
+        const newBalance = currentBalance + amountDelta;
+        const newTotal = currentTotal + amountDelta;
+
+        await FundModel.update(
+          {
+            Balance: newBalance,
+            Total: newTotal,
+            ModifyBy: req.user.id,
+            ModifyDate: new Date()
+          },
+          { where: { ID: fundID }, transaction: t }
+        );
+        console.log(`[fundTransfer.approve] Fund ${fundID} updated. New Balance: ${newBalance}`);
+      } else {
+        console.warn(`[fundTransfer.approve] Fund ${fundID} not found.`);
+      }
+    };
+
+    // Update source fund (deduct)
+    if (sourceFundID) {
+      await updateFundBalances(sourceFundID, -transferAmount);
+    }
+
+    // Update target fund (add)
+    if (targetFundID) {
+      await updateFundBalances(targetFundID, transferAmount);
+    }
+
+    // --- 4. Commit ---
     await t.commit();
     res.json({ success: true, message: 'Transaction approved successfully.' });
   } catch (err) {
