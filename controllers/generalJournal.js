@@ -13,75 +13,92 @@ const exportToExcel = async (data, filename) => {
 };
 
 const mockData = [
-      {
-        "Date": "2025-06-01",
-        "VoucherNo": "INV-1001",
-        "Remarks": "Purchase of Office Chairs",
-        "AccountCode": "10101001",
-        "S/L": "001",
-        "Debit": 12000.00,
-        "Credit": null,
-        "Approver": "Maria L. Reyes",
-        "Position": "Municipal Treasurer"
-      },
-      {
-        "Date": "2025-06-02",
-        "VoucherNo": "INV-1002",
-        "Remarks": "Repair of Printer",
-        "AccountCode": "10102001",
-        "S/L": "002",
-        "Debit": 3500.00,
-        "Credit": null,
-        "Approver": "Carlos T. Mendoza",
-        "Position": "Budget Officer"
-      },
-      {
-        "Date": "2025-06-03",
-        "VoucherNo": "INV-1003",
-        "Remarks": "Refund - Overpayment",
-        "AccountCode": "20203001",
-        "S/L": "003",
-        "Debit": null,
-        "Credit": 2500.00,
-        "Approver": "Elena G. Rivera",
-        "Position": "Municipal Accountant"
-      },
-      {
-        "Date": "2025-06-05",
-        "VoucherNo": "INV-1004",
-        "Remarks": "Procurement of Books",
-        "AccountCode": "10104001",
-        "S/L": "004",
-        "Debit": 8000.00,
-        "Credit": null,
-        "Approver": "Fernando D. Cruz",
-        "Position": "Municipal Treasurer"
-      },
-      {
-        "Date": "2025-06-07",
-        "VoucherNo": "INV-1005",
-        "Remarks": "Advance Payment - Consultant",
-        "AccountCode": "20205001",
-        "S/L": "005",
-        "Debit": null,
-        "Credit": 10000.00,
-        "Approver": "Sophia R. Gomez",
-        "Position": "Municipal Accountant"
-      }
-    ];
+  {
+    "Date": "2025-06-01",
+    "VoucherNo": "INV-1001",
+    "Remarks": "Purchase of Office Chairs",
+    "AccountCode": "10101001",
+    "S/L": "001",
+    "Debit": 12000.00,
+    "Credit": null,
+    "Approver": "Maria L. Reyes",
+    "Position": "Municipal Treasurer"
+  },
+  {
+    "Date": "2025-06-02",
+    "VoucherNo": "INV-1002",
+    "Remarks": "Repair of Printer",
+    "AccountCode": "10102001",
+    "S/L": "002",
+    "Debit": 3500.00,
+    "Credit": null,
+    "Approver": "Carlos T. Mendoza",
+    "Position": "Budget Officer"
+  },
+  {
+    "Date": "2025-06-03",
+    "VoucherNo": "INV-1003",
+    "Remarks": "Refund - Overpayment",
+    "AccountCode": "20203001",
+    "S/L": "003",
+    "Debit": null,
+    "Credit": 2500.00,
+    "Approver": "Elena G. Rivera",
+    "Position": "Municipal Accountant"
+  },
+  {
+    "Date": "2025-06-05",
+    "VoucherNo": "INV-1004",
+    "Remarks": "Procurement of Books",
+    "AccountCode": "10104001",
+    "S/L": "004",
+    "Debit": 8000.00,
+    "Credit": null,
+    "Approver": "Fernando D. Cruz",
+    "Position": "Municipal Treasurer"
+  },
+  {
+    "Date": "2025-06-07",
+    "VoucherNo": "INV-1005",
+    "Remarks": "Advance Payment - Consultant",
+    "AccountCode": "20205001",
+    "S/L": "005",
+    "Debit": null,
+    "Credit": 10000.00,
+    "Approver": "Sophia R. Gomez",
+    "Position": "Municipal Accountant"
+  }
+];
 
 exports.view = async (req, res) => {
   try {
+    console.log("GeneralJournal View Payload:", req.body);
     const {
-      startDate,
-      endDate,
-      fundID,
+      startDate, DateStart,
+      endDate, DateEnd,
+      fundID, FundID,
+      code = '%' // Default to '%' if code is not provided
     } = req.body;
 
+    const finalStartDate = startDate || DateStart;
+    const finalEndDate = endDate || DateEnd;
+    const finalFundID = fundID || FundID;
+
+    // Validate required fields
+    if (!finalStartDate || !finalEndDate || !finalFundID) {
+      console.error("Missing required parameters (startDate/DateStart, endDate/DateEnd, fundID/FundID)");
+      return res.status(400).json({ error: "Missing required parameters: startDate, endDate, fundID" });
+    }
+
     const results = await sequelize.query(
-      'CALL SP_GeneralJournal(:startDate, :endDate, :fundID)',
+      'CALL SP_GeneralJournal(:startDate, :endDate, :fundID, :code)',
       {
-        replacements: { startDate, endDate, fundID },
+        replacements: {
+          startDate: finalStartDate,
+          endDate: finalEndDate,
+          fundID: finalFundID,
+          code
+        },
       }
     );
 
@@ -90,7 +107,7 @@ exports.view = async (req, res) => {
     return res.json(results);
   } catch (err) {
     console.error('Error:', err);
-    res.status(500).json({ error: 'Internal server error' });
+    res.status(500).json({ error: err.message });
   }
 };
 
@@ -101,8 +118,8 @@ exports.exportExcel = async (req, res) => {
       endDate,
       fundID,
     } = req.body;
-    
-    
+
+
     let results = mockData;
 
     const filename = `General_Journal_${Date.now()}.xlsx`;

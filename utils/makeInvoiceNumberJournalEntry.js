@@ -7,9 +7,9 @@ async function makeInvoiceNumberJournalEntry() {
     throw new Error('Document Type with ID 23 for Journal Entry Voucher not found. Cannot generate invoice number without it.');
   }
 
-  const nextNumber = docType['Current Number'] + 1;
-  const prefix = docType['Prefix'] || '';
-  const suffix = docType['Suffix'] || '';
+  const nextNumber = (docType.CurrentNumber || 0) + 1;
+  const prefix = docType.Prefix || '';
+  const suffix = docType.Suffix || '';
 
   const invoiceNumber = `${prefix}-${nextNumber}-${suffix}`;
 

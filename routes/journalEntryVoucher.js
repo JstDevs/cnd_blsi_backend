@@ -6,6 +6,8 @@ const createUploader = require('../middleware/uploadFiles');
 const uploader = createUploader('journalEntryVouchers');
 
 router.post('/', requireAuth, uploader.any(), controller.create);
+router.post('/postTransaction', requireAuth, controller.approveTransaction);
+router.post('/rejectTransaction', requireAuth, controller.rejectTransaction);
 router.get('/', requireAuth, controller.getAll);
 router.get('/:id', requireAuth, controller.getById);
 router.put('/:id', requireAuth, uploader.any(), controller.update);

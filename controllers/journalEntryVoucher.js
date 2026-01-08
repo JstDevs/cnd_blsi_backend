@@ -4,10 +4,13 @@ const AttachmentModel = require('../config/database').Attachment;
 const ChartofAccountsModel = require('../config/database').ChartofAccounts;
 const TransactionTableModel = require('../config/database').TransactionTable;
 const EmployeeModel = require('../config/database').employee;
+const DocumentTypeModel = require('../config/database').documentType;
+const ApprovalAuditModel = require('../config/database').ApprovalAudit;
+const GeneralLedgerModel = require('../config/database').GeneralLedger;
 const generateLinkID = require("../utils/generateID")
 const makeInvoiceNumberJournalEntry = require('../utils/makeInvoiceNumberJournalEntry');
 const getLatestApprovalVersion = require('../utils/getLatestApprovalVersion');
-const db=require('../config/database')
+const db = require('../config/database')
 const { Op, literal } = require('sequelize');
 
 // exports.create = async (req, res) => {
@@ -25,7 +28,7 @@ exports.create = async (req, res) => {
 
   try {
     const parsedFields = {};
-        
+
     // Reconstruct Attachments array from fields like Attachments[0].ID starts
     const attachments = [];
     for (const key in req.body) {
@@ -48,7 +51,7 @@ exports.create = async (req, res) => {
         parsedFields[key] = req.body[key];
       }
     }
-    
+
     const {
       Attachments = [],
     } = parsedFields;
@@ -154,7 +157,7 @@ exports.create = async (req, res) => {
     );
     await JournalEntryVoucherModel.bulkCreate(journalItems, { transaction: t });
 
-    
+
     // Attachment handling
     const existingIDs = Attachments.filter(att => att.ID).map(att => att.ID);
 
@@ -222,7 +225,7 @@ exports.create = async (req, res) => {
     //   ]
     // });
 
-    res.status(201).json({ message: 'success'});
+    res.status(201).json({ message: 'success' });
   } catch (err) {
     console.error('❌ Error creating journal entry:', err);
     await t.rollback();
@@ -348,7 +351,7 @@ exports.update = async (req, res) => {
       Attachments = []
     } = parsedFields;
 
-    
+
     // Check if the record is in a state that allows updates
     const journalRecord = await TransactionTableModel.findOne({ where: { LinkID } });
     // if (!journalRecord || journalRecord.Status !== 'Rejected') {
@@ -356,7 +359,7 @@ exports.update = async (req, res) => {
     // }
 
     // Validate totals
-    
+
     // get total debit
     const totalDebit = Number(
       AccountingEntries.reduce((sum, e) => {
@@ -533,5 +536,167 @@ exports.delete = async (req, res) => {
     await t.rollback();
     console.error('❌ Error deleting journal entry:', err);
     res.status(500).json({ error: err.message || 'Internal server error' });
+  }
+};
+
+async function getCurrentNumber(transaction) {
+  let currentNumber = 1;
+
+  const docType = await DocumentTypeModel.findOne({
+    where: { ID: 23 }, // 23 is Journal Entry Voucher as per create function
+    attributes: ["CurrentNumber"],
+    transaction
+  });
+
+  if (docType) {
+    currentNumber = (docType.CurrentNumber || 0) + 1;
+  }
+
+  // Return formatted series number (4-digit padded)
+  return currentNumber.toString().padStart(4, "0");
+}
+
+exports.approveTransaction = async (req, res) => {
+  const t = await db.sequelize.transaction();
+  try {
+    const {
+      ID: transactionId,
+      ApprovalLinkID: varApprovalLink,
+      LinkID: varLinkID,
+      ApprovalProgress: approvalProgress,
+      ApprovalOrder: approvalOrder,
+      NumberOfApproverPerSequence: numberofApproverperSequence,
+      FundsID,
+      ApprovalVersion: varTransactionApprovalVersion
+    } = req.body;
+
+    // 1. Generate Invoice Number
+    const now = new Date();
+    const year = now.getFullYear();
+    const month = String(now.getMonth() + 1).padStart(2, "0");
+    const currentYYMM = `${year}-${month}`;
+
+    console.log("APPROVE JEV PAYLOAD:", req.body); // DEBUG LOG
+
+    const currentNumber = await getCurrentNumber(t);
+    const fund = await FundsModel.findByPk(FundsID, { transaction: t });
+    const fundCode = fund ? fund.Code : '000'; // Fallback code
+
+    // Format: FundCode-YYYY-MM-XXXX
+    const newInvoiceNumber = `${fundCode}-${currentYYMM}-${currentNumber}`;
+
+    // 2. Determine New Status
+    let newStatus = "Requested";
+    console.log("ApproverPerSequence:", numberofApproverperSequence, "Progress:", approvalProgress); // DEBUG LOG
+
+    if (numberofApproverperSequence) {
+      if (approvalProgress >= numberofApproverperSequence) newStatus = "Posted";
+    } else {
+      if ((approvalProgress || 0) > 0) newStatus = "Posted";
+    }
+
+    console.log("New Status:", newStatus); // DEBUG LOG
+
+    const updatePayload = {
+      ApprovalProgress: approvalProgress,
+      Status: newStatus
+    };
+
+    if (newStatus === "Posted") {
+      updatePayload.InvoiceNumber = newInvoiceNumber;
+      // Copy to General Ledger when posted
+      const jevEntries = await JournalEntryVoucherModel.findAll({
+        where: { LinkID: varLinkID },
+        transaction: t
+      });
+
+      for (const entry of jevEntries) {
+        await GeneralLedgerModel.create({
+          LinkID: entry.LinkID,
+          FundID: FundsID,
+          FundName: entry.FundsName,
+          LedgerItem: entry.LedgerItem,
+          AccountName: entry.AccountName,
+          AccountCode: entry.AccountCode,
+          Debit: entry.Debit,
+          Credit: entry.Credit,
+          CreatedBy: entry.CreatedBy,
+          CreatedDate: new Date(),
+          DocumentTypeName: 'Journal Entry Voucher'
+        }, { transaction: t });
+      }
+    }
+
+    await TransactionTableModel.update(updatePayload, { where: { ID: transactionId }, transaction: t });
+
+    // 3. Update DocumentType current number
+    await DocumentTypeModel.update(
+      { CurrentNumber: currentNumber },
+      { where: { ID: 23 }, transaction: t }
+    );
+
+    // 4. Insert into Approval Audit
+    await ApprovalAuditModel.create(
+      {
+        LinkID: varApprovalLink,
+        InvoiceLink: varLinkID,
+        PositionEmployee: "Employee",
+        PositionEmployeeID: req.user.employeeID,
+        SequenceOrder: approvalOrder, // Correctly use the approved sequence order
+        ApprovalOrder: numberofApproverperSequence,
+        ApprovalDate: now,
+        RejectionDate: null,
+        Remarks: null,
+        CreatedBy: req.user.id,
+        CreatedDate: now,
+        ApprovalVersion: varTransactionApprovalVersion
+      },
+      { transaction: t }
+    );
+
+    await t.commit();
+    return res.json({ success: true, message: "Transaction approved successfully." });
+
+  } catch (err) {
+    await t.rollback();
+    console.error("Error approving transaction:", err);
+    return res.status(500).json({ success: false, message: err.message });
+  }
+};
+
+exports.rejectTransaction = async (req, res) => {
+  const t = await db.sequelize.transaction();
+  try {
+    const {
+      ID: id,
+      LinkID: varApprovalLink,
+      Reason: reasonForRejection,
+    } = req.body;
+
+    // --- UPDATE Transaction Table ---
+    await TransactionTableModel.update(
+      { Status: "Rejected" },
+      { where: { ID: id }, transaction: t }
+    );
+
+    // --- INSERT INTO Approval Audit ---
+    await ApprovalAuditModel.create(
+      {
+        LinkID: varApprovalLink, // IMPORTANT: Use LinkID of Approval Matrix, NOT the Transaction LinkID, unless standard is otherwise. Usually matches frontend.
+        RejectionDate: new Date(),
+        Remarks: reasonForRejection,
+        CreatedBy: req.user.id,
+        CreatedDate: new Date()
+      },
+      { transaction: t }
+    );
+
+    await t.commit();
+    res.json({ success: true, message: "Transaction rejected successfully." });
+
+  } catch (err) {
+    await t.rollback();
+    console.error("Error rejecting transaction:", err);
+    res.status(500).json({ success: false, message: err.message });
   }
 };
