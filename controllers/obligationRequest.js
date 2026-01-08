@@ -9,7 +9,7 @@ const ProjectModel = require('../config/database').Project;
 const DepartmentModel = require('../config/database').department;
 const ChartofAccountsModel = require('../config/database').ChartofAccounts;
 const TaxCodeModel = require('../config/database').taxCode;
-const db=require('../config/database')
+const db = require('../config/database')
 const generateLinkID = require("../utils/generateID")
 const getLatestApprovalVersion = require('../utils/getLatestApprovalVersion');
 const { hasAccess } = require('../utils/checkUserAccess');
@@ -40,7 +40,7 @@ exports.create = async (req, res) => {
     let { VendorID,
       CustomerID,
       EmployeeID
-     } = req.body;
+    } = req.body;
 
     VendorID = Number(VendorID) || 0;
     CustomerID = Number(CustomerID) || 0;
@@ -70,7 +70,7 @@ exports.create = async (req, res) => {
     }
 
     const latestApprovalVersion = await getLatestApprovalVersion('Obligation Request');
-    
+
     const newRecord = await TransactionTable.create({
       DocumentTypeID: 13,
       LinkID,
@@ -111,10 +111,10 @@ exports.create = async (req, res) => {
           }
         ]
       });
-      if(!account) {
+      if (!account) {
         throw new Error(`Charge Account with ID ${item.ChargeAccountID} not found`);
       }
-        
+
       let credit = 0;
       let debit = 0;
       if (account.ChartofAccounts?.NormalBalance === 'Debit') {
@@ -177,14 +177,15 @@ exports.create = async (req, res) => {
     for (const item of Items) {
       if (fund?.Name !== 'Trust Fund' && fund?.Name !== 'Special Education Fund') {
         const budget = await Budget.findByPk(item.ChargeAccountID, { transaction: t });
-        if(budget) {
-          const newPreEncumbrance = parseFloat(budget.PreEncumbrance || 0) + parseFloat(item.subtotal);
+        if (budget) {
+          const subtotal = parseFloat(item.Sub_Total || item.subtotal || 0);
+          const newPreEncumbrance = parseFloat(budget.PreEncumbrance || 0) + subtotal;
           await budget.update({ PreEncumbrance: newPreEncumbrance }, { transaction: t });
         }
       }
     }
 
-    
+
     if (req.files && req.files.length > 0) {
       const blobAttachments = req.files.map((file) => ({
         LinkID,
@@ -245,7 +246,7 @@ exports.getAll = async (req, res) => {
       Active: true,
       APAR: { [Op.like]: '%Obligation Request%' }
     };
-    
+
     const whereCondition = {};
     if (selectedDepartmentID && selectedDepartmentID !== '') {
       // Filter by department ID if not "All"
@@ -343,7 +344,7 @@ exports.update = async (req, res) => {
       Items
     } = req.body;
 
-    let { 
+    let {
       VendorID,
       CustomerID,
       EmployeeID
@@ -389,9 +390,23 @@ exports.update = async (req, res) => {
     }
     await transaction.update(updatePayload, { transaction: t });
 
+    // Adjust Budget Balances: Subtract old items, add new items
+    const oldItems = await TransactionItems.findAll({ where: { LinkID: transaction.LinkID }, transaction: t });
+    const fund = await FundsModel.findByPk(FundsID, { transaction: t });
+    const isBudgetFund = fund?.Name !== 'Trust Fund' && fund?.Name !== 'Special Education Fund';
+
+    if (isBudgetFund) {
+      for (const oldItem of oldItems) {
+        const budget = await Budget.findByPk(oldItem.ChargeAccountID, { transaction: t });
+        if (budget) {
+          const oldSubtotal = parseFloat(oldItem.Sub_Total || 0);
+          await budget.update({ PreEncumbrance: parseFloat(budget.PreEncumbrance || 0) - oldSubtotal }, { transaction: t });
+        }
+      }
+    }
+
     await TransactionItems.destroy({ where: { LinkID: transaction.LinkID }, transaction: t });
 
-    const fund = await FundsModel.findByPk(FundsID, { transaction: t });
     for (const item of Items) {
       const account = await BudgetModel.findOne({
         where: { ID: item.ChargeAccountID },
@@ -405,10 +420,14 @@ exports.update = async (req, res) => {
       });
       if (!account) throw new Error(`Charge Account ID ${item.ChargeAccountID} not found`);
 
+      const subTotal = parseFloat(item.Sub_Total || item.subtotal || 0);
+      const amountDue = parseFloat(item.AmountDue || item.subtotal || 0);
+      const subtotalBeforeDiscount = parseFloat(item.Sub_Total || item.subtotalBeforeDiscount || 0);
+
       let credit = 0;
       let debit = 0;
-      if (account.ChartofAccounts?.NormalBalance === 'Debit') debit = item.subtotal;
-      else if (account.ChartofAccounts?.NormalBalance === 'Credit') credit = item.subtotal;
+      if (account.ChartofAccounts?.NormalBalance === 'Debit') debit = subTotal;
+      else if (account.ChartofAccounts?.NormalBalance === 'Credit') credit = subTotal;
 
       const UniqueID = generateLinkID();
       await TransactionItems.create({
@@ -428,33 +447,35 @@ exports.update = async (req, res) => {
         CreatedDate: new Date(),
         Credit: credit,
         Debit: debit,
-        Vat_Total: item.Vat_Total,
-        EWT: item.EWT,
-        WithheldAmount: item.WithheldAmount,
-        Sub_Total: item.Sub_Total,
-        EWTRate: item.EWTRate,
-        Discounts: item.Discounts,
+        Vat_Total: item.Vat_Total || item.vat,
+        EWT: item.EWT || item.ewt,
+        WithheldAmount: item.WithheldAmount || item.withheld,
+        Sub_Total: subtotalBeforeDiscount,
+        EWTRate: item.EWTRate || item.ewtrate,
+        Discounts: item.Discounts || item.discount,
         DiscountRate: item.DiscountRate,
-        AmountDue: item.AmountDue,
-        PriceVatExclusive: item.PriceVatExclusive,
+        AmountDue: amountDue,
+        PriceVatExclusive: item.PriceVatExclusive || item.subtotalTaxExcluded,
         Remarks: item.Remarks,
         FPP: item.FPP,
         Discounted: item.Discounted,
         InvoiceNumber: InvoiceNumber,
-        NormalBalance: account.NormalBalance,
+        NormalBalance: account.ChartofAccounts?.NormalBalance,
         ResponsibilityCenter: item.ResponsibilityCenter,
         Vatable: item.Vatable
       });
 
-      if (fund?.Name !== 'Trust Fund' && fund?.Name !== 'Special Education Fund') {
+      if (isBudgetFund) {
         const budget = await Budget.findByPk(item.ChargeAccountID, { transaction: t });
-        const newPreEncumbrance = parseFloat(budget.PreEncumbrance || 0) + parseFloat(item.Sub_Total);
-        await budget.update({ PreEncumbrance: newPreEncumbrance }, { transaction: t });
+        if (budget) {
+          const newPreEncumbrance = parseFloat(budget.PreEncumbrance || 0) + amountDue;
+          await budget.update({ PreEncumbrance: newPreEncumbrance }, { transaction: t });
+        }
       }
     }
 
 
-    
+
     // Attachment handling
     const existingIDs = Attachment.filter(att => att.ID).map(att => att.ID);
 
@@ -480,7 +501,7 @@ exports.update = async (req, res) => {
 
     await t.commit();
 
-    
+
     const newObligation = await TransactionTable.findOne({
       where: { LinkID: transaction.LinkID },
       include: [
@@ -589,17 +610,25 @@ exports.approveTransaction = async (req, res) => {
     const newInvoiceNumber = `${FundsID}-${currentYYMM}-${currentNumber}`;
 
     // 🔹 2. Handle Approve / Post logic
-    const method = "Post";
-    if (method === "Post") {
-      await TransactionTable.update(
-        {
-          ApprovalProgress: approvalProgress,
-          Status: "Posted",
-          InvoiceNumber: newInvoiceNumber
-        },
-        { where: { ID: transactionId }, transaction: t }
-      );
+    let newStatus = "Requested";
+    if (numberofApproverperSequence) {
+      if (approvalProgress >= numberofApproverperSequence) newStatus = "Posted";
+    } else {
+      if ((approvalProgress || 0) > 0) newStatus = "Posted";
+    }
 
+    const updatePayload = {
+      ApprovalProgress: approvalProgress,
+      Status: newStatus
+    };
+
+    if (newStatus === "Posted") {
+      updatePayload.InvoiceNumber = newInvoiceNumber;
+    }
+
+    await TransactionTable.update(updatePayload, { where: { ID: transactionId }, transaction: t });
+
+    if (newStatus === "Posted") {
       const fund = await FundsModel.findByPk(FundsID, { transaction: t });
       if (!fund) {
         throw new Error(`Fund with ID ${FundsID} not found`);
@@ -612,35 +641,34 @@ exports.approveTransaction = async (req, res) => {
 
         const transactionItems = await TransactionItems.findAll({
           where: { LinkID: varLinkID },
-          attributes: ["ChargeAccountID", "Sub_Total"],
+          attributes: ["ChargeAccountID", "AmountDue", "Sub_Total"],
           transaction: t
         });
 
         for (const row of transactionItems) {
           const chargeId = row.ChargeAccountID;
-          const subTotal = parseFloat(row.Sub_Total || 0);
+          const subTotal = parseFloat(row.AmountDue || row.Sub_Total || 0);
           chargeAccountSums[chargeId] = Number(chargeAccountSums[chargeId] || 0) + subTotal;
         }
 
-        // update PreEncumbrance
+        // Consolidate updates: Update PreEncumbrance and Encumbrance together
         for (const chargeId of Object.keys(chargeAccountSums)) {
-          const currentPreEnc = await getTotalBudget(t, chargeId);
-          const updatedPreEnc = Number(currentPreEnc) - Number(chargeAccountSums[chargeId]);
+          const budget = await BudgetModel.findByPk(chargeId, { transaction: t });
+          if (!budget) continue;
 
-          await BudgetModel.update(
-            { PreEncumbrance: updatedPreEnc },
-            { where: { ID: chargeId }, transaction: t }
-          );
-        }
+          const transferAmount = Number(chargeAccountSums[chargeId] || 0);
+          const currentPreEnc = Number(budget.PreEncumbrance || 0);
+          const currentEnc = Number(budget.Encumbrance || 0);
 
-        // update Encumbrance
-        for (const chargeId of Object.keys(chargeAccountSums)) {
-          const currentEnc = await getTotalBudgetEncumbrance(t, chargeId); // implement helper
-          const updatedEnc = currentEnc + chargeAccountSums[chargeId];
+          const updatedPreEnc = currentPreEnc - transferAmount;
+          const updatedEnc = currentEnc + transferAmount;
 
-          await BudgetModel.update(
-            { Encumbrance: updatedEnc < 0 ? 0 : updatedEnc },
-            { where: { ID: chargeId }, transaction: t }
+          await budget.update(
+            {
+              PreEncumbrance: updatedPreEnc < 0 ? 0 : updatedPreEnc,
+              Encumbrance: updatedEnc < 0 ? 0 : updatedEnc
+            },
+            { transaction: t }
           );
         }
       }
@@ -685,5 +713,42 @@ exports.approveTransaction = async (req, res) => {
     await t.rollback();
     console.error("Error approving transaction:", err);
     return res.status(500).json({ success: false, message: err.message });
+  }
+};
+
+exports.rejectTransaction = async (req, res) => {
+  const t = await db.sequelize.transaction();
+  try {
+    const {
+      ID: id,
+      LinkID: varApprovalLink,
+      Reason: reasonForRejection, // Map from frontend "Reason"
+    } = req.body;
+
+    // --- UPDATE Transaction Table ---
+    await TransactionTable.update(
+      { Status: "Rejected" },
+      { where: { ID: id }, transaction: t }
+    );
+
+    // --- INSERT INTO Approval Audit ---
+    await ApprovalAudit.create(
+      {
+        LinkID: varApprovalLink,
+        RejectionDate: new Date(),
+        Remarks: reasonForRejection,
+        CreatedBy: req.user.id,
+        CreatedDate: new Date()
+      },
+      { transaction: t }
+    );
+
+    await t.commit();
+    res.json({ success: true, message: "Transaction rejected successfully." });
+
+  } catch (err) {
+    await t.rollback();
+    console.error("Error rejecting transaction:", err);
+    res.status(500).json({ success: false, message: err.message });
   }
 };
