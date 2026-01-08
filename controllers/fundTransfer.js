@@ -51,7 +51,8 @@ exports.save = async (req, res) => {
     const data = parsedFields;
 
     const userID = req.user.id;
-    const transferAmount = parseFloat(data.Transfer);
+    const amountStr = String(data.Transfer || 0).replace(/,/g, '');
+    const transferAmount = parseFloat(amountStr);
 
     const LinkID = generateLinkID();
 
@@ -277,9 +278,7 @@ exports.approve = async (req, res) => {
         await FundModel.update(
           {
             Balance: newBalance,
-            Total: newTotal,
-            ModifyBy: req.user.id,
-            ModifyDate: new Date()
+            Total: newTotal
           },
           { where: { ID: fundID }, transaction: t }
         );
