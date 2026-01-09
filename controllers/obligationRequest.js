@@ -125,9 +125,14 @@ exports.create = async (req, res) => {
         credit = item.subtotal;
       }
 
-      const tax = await TaxCodeModel.findByPk(item.TAXCodeID, { transaction: t });
-      if (!tax) {
-        throw new Error(`Tax Code with ID ${item.TAXCodeID} not found`);
+      let tax = null;
+      if (item.TAXCodeID) {
+        tax = await TaxCodeModel.findByPk(item.TAXCodeID, { transaction: t });
+        /* 
+        if (!tax) {
+          throw new Error(`Tax Code with ID ${item.TAXCodeID} not found`);
+        } 
+        */
       }
 
       const UniqueID = generateLinkID();
@@ -139,9 +144,9 @@ exports.create = async (req, res) => {
         Quantity: item.Quantity,
         ItemUnitID: item.ItemUnitID,
         Price: item.Price,
-        TAXCodeID: item.TAXCodeID,
-        TaxName: tax.Name,
-        TaxRate: tax.Rate,
+        TAXCodeID: item.TAXCodeID || null,
+        TaxName: tax ? tax.Name : (item.TaxName || null),
+        TaxRate: tax ? tax.Rate : (item.TaxRate || 0),
 
         Sub_Total_Vat_Ex: item.subtotalTaxExcluded,
 
@@ -388,10 +393,10 @@ exports.update = async (req, res) => {
       Remarks
     };
 
-    if (!hasMayorAccess) {
-      updatePayload.Status = 'Requested';
-      updatePayload.ApprovalProgress = 0;
+    if (transaction.Status === 'Posted') {
+      throw new Error('Cannot update an Obligation Request that is already Posted.');
     }
+
     await transaction.update(updatePayload, { transaction: t });
 
     // Adjust Budget Balances: Subtract old items, add new items
@@ -604,21 +609,38 @@ exports.approveTransaction = async (req, res) => {
       ApprovalVersion: varTransactionApprovalVersion
     } = req.body;
 
-    // 🔹 1. Generate Invoice Number
+    // 🔹 0. Fetch Current Transaction
+    const transaction = await TransactionTable.findByPk(transactionId, { transaction: t });
+    if (!transaction) {
+      throw new Error(`Transaction with ID ${transactionId} not found`);
+    }
+
+    // If already posted, we should only update the approval audit but skip budget/status changes
+    const alreadyPosted = transaction.Status === "Posted";
+
+    // 🔹 1. Generate Invoice Number (only if not already posted)
     const now = new Date();
     const year = now.getFullYear();
     const month = String(now.getMonth() + 1).padStart(2, "0"); // 0-based → +1
     const currentYYMM = `${year}-${month}`;
 
-    const currentNumber = await getCurrentNumber(t);
-    const newInvoiceNumber = `${FundsID}-${currentYYMM}-${currentNumber}`;
+    let newInvoiceNumber = transaction.InvoiceNumber;
+    let currentNumber = null;
+
+    if (!alreadyPosted) {
+      currentNumber = await getCurrentNumber(t);
+      newInvoiceNumber = `${FundsID}-${currentYYMM}-${currentNumber}`;
+    }
 
     // 🔹 2. Handle Approve / Post logic
-    let newStatus = "Requested";
-    if (numberofApproverperSequence) {
-      if (approvalProgress >= numberofApproverperSequence) newStatus = "Posted";
-    } else {
-      if ((approvalProgress || 0) > 0) newStatus = "Posted";
+    let newStatus = transaction.Status;
+    if (!alreadyPosted) {
+      newStatus = "Requested";
+      if (numberofApproverperSequence) {
+        if (approvalProgress >= numberofApproverperSequence) newStatus = "Posted";
+      } else {
+        if ((approvalProgress || 0) > 0) newStatus = "Posted";
+      }
     }
 
     const updatePayload = {
@@ -626,13 +648,13 @@ exports.approveTransaction = async (req, res) => {
       Status: newStatus
     };
 
-    if (newStatus === "Posted") {
+    if (newStatus === "Posted" && !alreadyPosted) {
       updatePayload.InvoiceNumber = newInvoiceNumber;
     }
 
     await TransactionTable.update(updatePayload, { where: { ID: transactionId }, transaction: t });
 
-    if (newStatus === "Posted") {
+    if (newStatus === "Posted" && !alreadyPosted) {
       const fund = await FundsModel.findByPk(FundsID, { transaction: t });
       if (!fund) {
         throw new Error(`Fund with ID ${FundsID} not found`);
@@ -678,17 +700,21 @@ exports.approveTransaction = async (req, res) => {
       }
     }
 
-    // 🔹 3. Update DocumentType current number
-    await DocumentTypeModel.update(
-      { CurrentNumber: currentNumber },
-      { where: { ID: 13 }, transaction: t }
-    );
+    if (currentNumber && !alreadyPosted) {
+      // 🔹 3. Update DocumentType current number
+      await DocumentTypeModel.update(
+        { CurrentNumber: currentNumber },
+        { where: { ID: 13 }, transaction: t }
+      );
+    }
 
-    // 🔹 4. Update Transaction Items invoice number
-    await TransactionItems.update(
-      { InvoiceNumber: newInvoiceNumber },
-      { where: { LinkID: varLinkID }, transaction: t }
-    );
+    if (newInvoiceNumber && !alreadyPosted) {
+      // 🔹 4. Update Transaction Items invoice number
+      await TransactionItems.update(
+        { InvoiceNumber: newInvoiceNumber },
+        { where: { LinkID: varLinkID }, transaction: t }
+      );
+    }
 
     // 🔹 5. Insert into Approval Audit
     await ApprovalAudit.create(
@@ -733,6 +759,11 @@ exports.rejectTransaction = async (req, res) => {
     const transaction = await TransactionTable.findByPk(id, { transaction: t });
     if (!transaction) {
       throw new Error(`Transaction with ID ${id} not found`);
+    }
+
+    if (transaction.Status === "Rejected") {
+      await t.rollback();
+      return res.json({ success: true, message: "Transaction already rejected." });
     }
 
     await transaction.update(

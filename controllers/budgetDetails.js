@@ -1,4 +1,4 @@
-const db=require('../config/database')
+const db = require('../config/database')
 const BudgetModel = require('../config/database').Budget;
 const { Op } = require('sequelize');
 const FiscalYearModel = require('../config/database').FiscalYear;
@@ -14,10 +14,10 @@ exports.save = async (req, res) => {
     const data = req.body;
 
     let IsNew = '';
-    if((data.IsNew == "true") || (data.IsNew === true) || (data.IsNew == '1') || (data.IsNew == 1)) {
+    if ((data.IsNew == "true") || (data.IsNew === true) || (data.IsNew == '1') || (data.IsNew == 1)) {
       IsNew = true;
     }
-    else if((data.IsNew == "false") || (data.IsNew === false) || (data.IsNew == '0') || (data.IsNew == 0)) {
+    else if ((data.IsNew == "false") || (data.IsNew === false) || (data.IsNew == '0') || (data.IsNew == 0)) {
       IsNew = false;
     }
     else {
@@ -40,7 +40,7 @@ exports.save = async (req, res) => {
 
     // 2. Data payload
     let payload = {};
-    if(IsNew) {
+    if (IsNew) {
       payload = {
         Name: data.Name,
         FiscalYearID: data.FiscalYearID,
