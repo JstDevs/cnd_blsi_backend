@@ -312,6 +312,20 @@ exports.save = async (req, res) => {
     const refID = (IsNew) ? generateLinkID() : data.LinkID;
     const latestApprovalVersion = await getLatestApprovalVersion('Disbursement Voucher');
 
+    let obligationRequestNumber = data.ObligationRequestNumber;
+    if (data.OBR_LinkID && !obligationRequestNumber) {
+      const obr = await TransactionTableModel.findOne({
+        where: { LinkID: data.OBR_LinkID },
+        transaction: t
+      });
+      if (obr) {
+        obligationRequestNumber = obr.InvoiceNumber;
+        if (!FundsID) {
+          FundsID = obr.FundsID;
+        }
+      }
+    }
+
     let communityData = {
       DocumentTypeID: documentTypeID,
       LinkID: refID,
@@ -341,7 +355,7 @@ exports.save = async (req, res) => {
       ResponsibilityCenter: ResponsibilityCenter,
       OfficeUnitProject: data.OfficeUnitProject,
       ModeOfPayment: data.ModeOfPayment,
-      ObligationRequestNumber: data.ObligationRequestNumber,
+      ObligationRequestNumber: obligationRequestNumber,
       ApprovalProgress: 0,
       ContraAccountID: data.ContraAccountID,
       FundsID: FundsID,
@@ -836,7 +850,7 @@ exports.approve = async (req, res) => {
 
     if (!trx) throw new Error('Transaction not found');
 
-    const fundCode = trx.FundsID?.Code;
+    const fundCode = trx.Funds?.Code;
     const approvalProgress = Number(trx.ApprovalProgress) || 0;
     const varLinkID = trx.LinkID;
     const dtItemList = trx.TransactionItems || [];
