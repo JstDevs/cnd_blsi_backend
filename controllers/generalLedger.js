@@ -103,10 +103,16 @@ exports.view = async (req, res) => {
       FundID,
     } = req.body;
 
+    console.log('General Ledger View Request Body:', req.body);
+
     const results = await sequelize.query(
       'CALL SP_GeneralLedger(:accountCode, :fundID, :cutoff)',
       {
-        replacements: { accountCode: ChartofAccountsID, fundID: FundID, cutoff: CutOffDate },
+        replacements: {
+          accountCode: ChartofAccountsID ?? '%',
+          fundID: FundID ?? '%',
+          cutoff: CutOffDate ?? new Date().toISOString().slice(0, 10)
+        },
       }
     );
 
