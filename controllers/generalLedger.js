@@ -113,7 +113,7 @@ exports.view = async (req, res) => {
     return res.json(results);
   } catch (err) {
     console.error('Error:', err);
-    res.status(500).json({ error: 'Internal server error' });
+    res.status(500).json({ error: err.message });
   }
 };
 
@@ -124,7 +124,7 @@ exports.exportExcel = async (req, res) => {
       CutOffDate,
       FundID,
     } = req.body;
-    
+
     const results = await sequelize.query(
       'CALL SP_GeneralLedger(:accountCode, :fundID, :cutoff)',
       {
