@@ -35,15 +35,15 @@ BEGIN
             jev.LedgerItem,
             trt.InvoiceNumber,
             CASE 
-                WHEN p_accountCode COLLATE utf8mb4_general_ci = '%' THEN 'AllAccounts'
+                WHEN p_accountCode = '%' THEN 'AllAccounts'
                 ELSE p_accountCode 
             END AS AccountCodeDisplay,
             CASE 
-                WHEN p_accountCode COLLATE utf8mb4_general_ci = '%' THEN 'AllAccounts'
+                WHEN p_accountCode = '%' THEN 'AllAccounts'
                 ELSE jev.AccountName
             END AS AccountNameDisplay,
             CASE 
-                WHEN p_fundID COLLATE utf8mb4_general_ci = '%' THEN 'AllFunds'
+                WHEN p_fundID = '%' THEN 'AllFunds'
                 ELSE jev.FundName
             END AS Fund,
             CASE 
@@ -61,8 +61,8 @@ BEGIN
         INNER JOIN lgu lgu ON lgu.ID = 1
         LEFT JOIN municipality lmu ON lmu.ID = lgu.MunicipalityID
         WHERE trt.APAR LIKE 'Journal Entry Voucher'
-          AND jev.AccountCode LIKE p_accountCode COLLATE utf8mb4_general_ci
-          AND CONCAT(fnd.ID, '') LIKE p_fundID COLLATE utf8mb4_general_ci
+          AND jev.AccountCode LIKE p_accountCode
+          AND CONCAT(fnd.ID, '') LIKE p_fundID
           AND jev.CreatedDate <= p_cutoff
 
         UNION ALL
@@ -82,15 +82,15 @@ BEGIN
             ) AS LedgerItem,
             trt.InvoiceNumber,
             CASE 
-                WHEN p_accountCode COLLATE utf8mb4_general_ci = '%' THEN 'AllAccounts'
+                WHEN p_accountCode = '%' THEN 'AllAccounts'
                 ELSE REPLACE(p_accountCode, '-', '')
             END AS AccountCodeDisplay,
             CASE 
-                WHEN p_accountCode COLLATE utf8mb4_general_ci = '%' THEN 'AllAccounts'
+                WHEN p_accountCode = '%' THEN 'AllAccounts'
                 ELSE coa.Name
             END AS AccountNameDisplay,
             CASE 
-                WHEN p_fundID COLLATE utf8mb4_general_ci = '%' THEN 'AllFunds'
+                WHEN p_fundID = '%' THEN 'AllFunds'
                 ELSE fnd.Name
             END AS Fund,
             CASE 
@@ -116,8 +116,8 @@ BEGIN
         INNER JOIN lgu lgu ON lgu.ID = 1
         INNER JOIN municipality lmu ON lmu.ID = lgu.MunicipalityID
         WHERE trt.APAR LIKE 'Disbursement Voucher'
-          AND coa.AccountCode LIKE p_accountCode COLLATE utf8mb4_general_ci
-          AND CONCAT(fnd.ID, '') LIKE p_fundID COLLATE utf8mb4_general_ci
+          AND coa.AccountCode LIKE p_accountCode
+          AND CONCAT(fnd.ID, '') LIKE p_fundID
           AND trt.PostingDate <= p_cutoff
 
     ) AS tbl
