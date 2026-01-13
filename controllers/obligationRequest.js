@@ -362,6 +362,10 @@ exports.update = async (req, res) => {
     const transaction = await TransactionTable.findByPk(ID);
     if (!transaction) return res.status(404).json({ error: 'Transaction not found' });
 
+    if (transaction.Status === 'Void') {
+      throw new Error("Cannot update a Voided Obligation Request.");
+    }
+
     // check if user has access to this module
     const moduleID = 27;
     const hasMayorAccess = await hasAccess(req.user.id, moduleID, 'Mayor');
@@ -571,9 +575,10 @@ exports.delete = async (req, res) => {
       }
     }
 
-    // --- Soft Delete Transaction and Items ---
-    await transaction.update({ Active: false, ModifyBy: req.user.id, ModifyDate: new Date() }, { transaction: t });
-    await TransactionItems.update({ Active: false }, { where: { LinkID: transaction.LinkID }, transaction: t });
+    // --- Void Transaction and keep Items active ---
+    await transaction.update({ Status: 'Void', ModifyBy: req.user.id, ModifyDate: new Date() }, { transaction: t });
+    // We keep TransactionItems active so they still show up in the details view of a Voided OBR
+    await TransactionItems.update({ Active: true }, { where: { LinkID: transaction.LinkID }, transaction: t });
 
     await t.commit();
     res.json({ success: true, message: "Transaction deleted successfully." });
@@ -654,6 +659,10 @@ exports.approveTransaction = async (req, res) => {
     const transaction = await TransactionTable.findByPk(transactionId, { transaction: t });
     if (!transaction) {
       throw new Error(`Transaction with ID ${transactionId} not found`);
+    }
+
+    if (transaction.Status === 'Void') {
+      throw new Error("Cannot approve a Voided Obligation Request.");
     }
 
     // If already posted, we should only update the approval audit but skip budget/status changes
@@ -800,6 +809,10 @@ exports.rejectTransaction = async (req, res) => {
     const transaction = await TransactionTable.findByPk(id, { transaction: t });
     if (!transaction) {
       throw new Error(`Transaction with ID ${id} not found`);
+    }
+
+    if (transaction.Status === 'Void') {
+      throw new Error("Cannot reject a Voided Obligation Request.");
     }
 
     if (transaction.Status === "Rejected") {
