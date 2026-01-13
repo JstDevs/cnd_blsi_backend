@@ -229,32 +229,70 @@ exports.list = async (req, res) => {
 };
 
 exports.delete = async (req, res) => {
+  const t = await db.sequelize.transaction();
   try {
     const id = req.params.id || req.body.ID || req.body.id;
-    console.log('[budgetSupplemental.delete] called, params.id=', req.params.id, 'body=', req.body);
-    // Soft delete - set Active = false on TransactionTable
     const userID = req.user?.id ?? 1;
-    const [updated] = await TransactionTableModel.update(
-      {
-        Active: false,
-        ModifyBy: userID,
-        ModifyDate: new Date(),
-      },
-      {
-        where: {
-          ID: id,
-          Active: true,
-          APAR: { [Op.like]: '%Budget Supplemental%' }
-        },
-      }
-    );
 
-    if (updated) {
-      res.json({ message: 'success' });
-    } else {
-      res.status(404).json({ message: 'not found or already deleted' });
+    const transaction = await TransactionTableModel.findByPk(id, { transaction: t });
+    if (!transaction) {
+      await t.rollback();
+      return res.status(404).json({ message: 'not found or already deleted' });
     }
+
+    // --- REVERT Budget Table IF POSTED ---
+    if (transaction.Status === 'Posted') {
+      const bID = transaction.BudgetID;
+      const supplementalAmount = parseFloat(transaction.Total || 0);
+
+      if (bID) {
+        const budget = await BudgetModel.findByPk(bID, { transaction: t });
+        if (budget) {
+          const currentSupplemental = parseFloat(budget.Supplemental || 0);
+          const newSupplemental = currentSupplemental - supplementalAmount;
+
+          const appropriation = parseFloat(budget.Appropriation || 0);
+          const transfer = parseFloat(budget.Transfer || 0);
+          const released = parseFloat(budget.Released || 0);
+
+          // Adjusted Appropriation = Appropriation + Supplemental + Transfer
+          const newAdjusted = appropriation + newSupplemental + transfer;
+          const newBalance = newAdjusted - released;
+
+          await budget.update({
+            Supplemental: newSupplemental,
+            AllotmentBalance: newBalance,
+            AppropriationBalance: newBalance,
+            ModifyBy: userID,
+            ModifyDate: new Date()
+          }, { transaction: t });
+        }
+      }
+    }
+
+    // --- VOID Transaction ---
+    await transaction.update({
+      Status: 'Void',
+      Active: true,
+      ModifyBy: userID,
+      ModifyDate: new Date()
+    }, { transaction: t });
+
+    // --- LOG TO AUDIT ---
+    await ApprovalAuditModel.create({
+      LinkID: generateLinkID(),
+      InvoiceLink: transaction.LinkID,
+      RejectionDate: new Date(),
+      Remarks: "Transaction Voided by User",
+      CreatedBy: userID,
+      CreatedDate: new Date(),
+      ApprovalVersion: transaction.ApprovalVersion
+    }, { transaction: t });
+
+    await t.commit();
+    res.json({ message: 'success' });
   } catch (err) {
+    if (t) await t.rollback();
     console.error(err);
     res.status(500).json({ error: err.message });
   }

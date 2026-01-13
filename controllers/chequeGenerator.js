@@ -189,10 +189,15 @@ exports.checkList = async (req, res) => {
 exports.delete = async (req, res) => {
   const t = await db.sequelize.transaction();
   try {
-    const { id } = req.params;
+    const id = req.body.ID || req.params.id;
+
+    if (!id) {
+      throw new Error('ID is required for voiding/deleting');
+    }
 
     const check = await CheckModel.findByPk(id, { transaction: t });
     if (!check) {
+      await t.rollback();
       return res.status(404).json({ error: 'Check not found' });
     }
 
@@ -203,30 +208,31 @@ exports.delete = async (req, res) => {
       ModifyDate: new Date()
     }, { transaction: t });
 
-    // --- Revert Related TransactionTable (DV) ---
+    // --- Revert Related TransactionTable (DV and OBR) ---
     if (check.DisbursementID) {
-      await TransactionTableModel.update(
-        { Status: 'Posted' },
-        { where: { LinkID: check.DisbursementID }, transaction: t }
-      );
-
-      // Find the DV to get the OBR link if any
+      // Find the DV first to get OBR info and reduce sequential updates if possible
       const dv = await TransactionTableModel.findOne({
         where: { LinkID: check.DisbursementID },
         transaction: t
       });
 
-      if (dv && dv.ObligationRequestNumber) {
-        await TransactionTableModel.update(
-          { Status: 'Posted, Disbursement Posted' },
-          {
-            where: {
-              InvoiceNumber: dv.ObligationRequestNumber,
-              APAR: { [Op.like]: 'Obligation Request%' }
-            },
-            transaction: t
-          }
-        );
+      if (dv) {
+        // Update DV status
+        await dv.update({ Status: 'Posted' }, { transaction: t });
+
+        if (dv.ObligationRequestNumber) {
+          // Update OBR status using exact match for APAR to speed up query
+          await TransactionTableModel.update(
+            { Status: 'Posted, Disbursement Posted' },
+            {
+              where: {
+                InvoiceNumber: dv.ObligationRequestNumber,
+                APAR: 'Obligation Request'
+              },
+              transaction: t
+            }
+          );
+        }
       }
     }
 

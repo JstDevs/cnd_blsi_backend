@@ -242,33 +242,73 @@ exports.list = async (req, res) => {
 
 // SOFT DELETE: Sets Active = false instead of removing from database
 exports.delete = async (req, res) => {
+  const t = await db.sequelize.transaction();
   try {
     const id = req.params.id || req.body.ID || req.body.id;
-    console.log('[budgetTransfer.delete] called, params.id=', req.params.id, 'body=', req.body);
     const userID = req.user?.id ?? 1;
 
-    // Soft delete - sets Active to false in TransactionTable, record remains in database
-    const [updated] = await TransactionTableModel.update(
-      {
-        Active: false,
-        ModifyBy: userID,
-        ModifyDate: new Date(),
-      },
-      {
-        where: {
-          ID: id,
-          Active: true,
-          APAR: { [Op.like]: '%Budget Transfer%' }
-        },
-      }
-    );
-
-    if (updated) {
-      res.json({ message: 'success' });
-    } else {
-      res.status(404).json({ message: "budget transfer not found" });
+    const transaction = await TransactionTableModel.findByPk(id, { transaction: t });
+    if (!transaction) {
+      await t.rollback();
+      return res.status(404).json({ message: "budget transfer not found" });
     }
+
+    // --- REVERT Budget Tables IF POSTED ---
+    if (transaction.Status === 'Posted') {
+      const sourceBudgetID = transaction.BudgetID;
+      const targetBudgetID = transaction.TargetID;
+      const transferAmount = parseFloat(transaction.Total || 0);
+
+      const updateBudgetBalances = async (budgetID, amountDelta) => {
+        const budget = await BudgetModel.findByPk(budgetID, { transaction: t });
+        if (budget) {
+          const currentTransfer = parseFloat(budget.Transfer || 0);
+          const newTransfer = currentTransfer + amountDelta;
+
+          const appropriation = parseFloat(budget.Appropriation || 0);
+          const supplemental = parseFloat(budget.Supplemental || 0);
+          const released = parseFloat(budget.Released || 0);
+
+          const newAdjusted = appropriation + supplemental + newTransfer;
+          const newBalance = newAdjusted - released;
+
+          await budget.update({
+            Transfer: newTransfer,
+            AllotmentBalance: newBalance,
+            AppropriationBalance: newBalance,
+            ModifyBy: userID,
+            ModifyDate: new Date()
+          }, { transaction: t });
+        }
+      };
+
+      if (sourceBudgetID) await updateBudgetBalances(sourceBudgetID, transferAmount); // Increment back source
+      if (targetBudgetID) await updateBudgetBalances(targetBudgetID, -transferAmount); // Decrement back target
+    }
+
+    // --- VOID Transaction ---
+    await transaction.update({
+      Status: 'Void',
+      Active: true,
+      ModifyBy: userID,
+      ModifyDate: new Date()
+    }, { transaction: t });
+
+    // --- LOG TO AUDIT ---
+    await ApprovalAuditModel.create({
+      LinkID: generateLinkID(),
+      InvoiceLink: transaction.LinkID,
+      RejectionDate: new Date(),
+      Remarks: "Transaction Voided by User",
+      CreatedBy: userID,
+      CreatedDate: new Date(),
+      ApprovalVersion: transaction.ApprovalVersion
+    }, { transaction: t });
+
+    await t.commit();
+    res.json({ message: 'success' });
   } catch (error) {
+    if (t) await t.rollback();
     console.error(error);
     res.status(500).json({ error: error.message });
   }

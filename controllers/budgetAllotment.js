@@ -266,33 +266,67 @@ exports.update = async (req, res) => {
 
 // SOFT DELETE: Sets Active = false instead of removing from database
 exports.delete = async (req, res) => {
+  const t = await db.sequelize.transaction();
   try {
     const id = req.params.id || req.body.ID || req.body.id;
-    console.log('[budgetAllotment.delete] called, params.id=', req.params.id, 'body=', req.body);
     const userID = req.user?.id ?? 1;
 
-    // Soft delete - sets Active to false in TransactionTable, record remains in database
-    const [updated] = await TransactionTableModel.update(
-      {
-        Active: false,
-        ModifyBy: userID,
-        ModifyDate: new Date(),
-      },
-      {
-        where: {
-          ID: id,
-          Active: true,
-          APAR: { [Op.like]: '%Allotment Release Order%' }
-        },
-      }
-    );
-
-    if (updated) {
-      res.json({ message: 'success' });
-    } else {
-      res.status(404).json({ message: "allotment not found" });
+    const transaction = await TransactionTableModel.findByPk(id, { transaction: t });
+    if (!transaction) {
+      await t.rollback();
+      return res.status(404).json({ message: "allotment not found" });
     }
+
+    // --- REVERT Budget Table IF POSTED ---
+    if (transaction.Status === 'Posted') {
+      const bID = transaction.BudgetID;
+      const allotmentAmount = parseFloat(transaction.Total || 0);
+
+      if (bID) {
+        const budget = await BudgetModel.findByPk(bID, { transaction: t });
+        if (budget) {
+          const currentReleased = parseFloat(budget.Released || 0);
+          const newReleased = currentReleased - allotmentAmount;
+
+          const appropriation = parseFloat(budget.Appropriation || 0);
+          const newAllotmentBalance = appropriation - newReleased;
+
+          await budget.update(
+            {
+              Released: newReleased,
+              AllotmentBalance: newAllotmentBalance,
+              ModifyBy: userID,
+              ModifyDate: new Date()
+            },
+            { transaction: t }
+          );
+        }
+      }
+    }
+
+    // --- VOID Transaction ---
+    await transaction.update({
+      Status: 'Void',
+      Active: true,
+      ModifyBy: userID,
+      ModifyDate: new Date()
+    }, { transaction: t });
+
+    // --- LOG TO AUDIT ---
+    await ApprovalAuditModel.create({
+      LinkID: generateLinkID(),
+      InvoiceLink: transaction.LinkID,
+      RejectionDate: new Date(),
+      Remarks: "Transaction Voided by User",
+      CreatedBy: userID,
+      CreatedDate: new Date(),
+      ApprovalVersion: transaction.ApprovalVersion
+    }, { transaction: t });
+
+    await t.commit();
+    res.json({ message: 'success' });
   } catch (error) {
+    if (t) await t.rollback();
     console.error(error);
     res.status(500).json({ error: error.message });
   }

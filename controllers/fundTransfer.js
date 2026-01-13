@@ -169,32 +169,63 @@ exports.list = async (req, res) => {
 
 // SOFT DELETE: Sets Active = false instead of removing from database
 exports.delete = async (req, res) => {
+  const t = await db.sequelize.transaction();
   try {
-    const id = req.params.id;
+    const id = req.params.id || req.body.ID || req.body.id;
     const userID = req.user?.id ?? 1;
 
-    // Soft delete - sets Active to false in TransactionTable, record remains in database
-    const [updated] = await TransactionTableModel.update(
-      {
-        Active: false,
-        ModifyBy: userID,
-        ModifyDate: new Date(),
-      },
-      {
-        where: {
-          ID: id,
-          Active: true,
-          APAR: { [Op.like]: '%Fund Transfer%' }
-        },
-      }
-    );
-
-    if (updated) {
-      res.json({ message: 'success' });
-    } else {
-      res.status(404).json({ message: "fund transfer not found" });
+    const transaction = await TransactionTableModel.findByPk(id, { transaction: t });
+    if (!transaction) {
+      await t.rollback();
+      return res.status(404).json({ message: "fund transfer not found" });
     }
+
+    // --- REVERT Fund Balances IF POSTED ---
+    if (transaction.Status === 'Posted') {
+      const sourceFundID = transaction.FundsID;
+      const targetFundID = transaction.TargetID;
+      const transferAmount = parseFloat(transaction.Total || 0);
+
+      const updateFundBalances = async (fundID, amountDelta) => {
+        const fund = await FundModel.findByPk(fundID, { transaction: t });
+        if (fund) {
+          const currentBalance = parseFloat(fund.Balance || 0);
+          const currentTotal = parseFloat(fund.Total || 0);
+
+          await FundModel.update({
+            Balance: currentBalance + amountDelta,
+            Total: currentTotal + amountDelta
+          }, { where: { ID: fundID }, transaction: t });
+        }
+      };
+
+      if (sourceFundID) await updateFundBalances(sourceFundID, transferAmount); // Increment back source
+      if (targetFundID) await updateFundBalances(targetFundID, -transferAmount); // Decrement back target
+    }
+
+    // --- VOID Transaction ---
+    await transaction.update({
+      Status: 'Void',
+      Active: true,
+      ModifyBy: userID,
+      ModifyDate: new Date()
+    }, { transaction: t });
+
+    // --- LOG TO AUDIT ---
+    await ApprovalAuditModel.create({
+      LinkID: generateLinkID(),
+      InvoiceLink: transaction.LinkID,
+      RejectionDate: new Date(),
+      Remarks: "Transaction Voided by User",
+      CreatedBy: userID,
+      CreatedDate: new Date(),
+      ApprovalVersion: transaction.ApprovalVersion
+    }, { transaction: t });
+
+    await t.commit();
+    res.json({ message: 'success' });
   } catch (error) {
+    if (t) await t.rollback();
     console.error(error);
     res.status(500).json({ error: error.message });
   }
