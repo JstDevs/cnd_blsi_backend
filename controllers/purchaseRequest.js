@@ -201,7 +201,7 @@ exports.update = async (req, res) => {
       }, { transaction: t });
     }
 
-    
+
     // Attachment handling
     const existingIDs = Attachments.filter(att => att.ID).map(att => att.ID);
 
@@ -326,13 +326,98 @@ exports.getAll = async (req, res) => {
 
 
 exports.getById = async (req, res) => {
+  try {
+    const transaction = await TransactionTableModel.findOne({
+      where: { ID: req.params.id },
+      include: [
+        { model: PurchaseItemsModel, as: 'PurchaseItems' },
+        { model: AttachmentModel, as: 'Attachments' },
+        { model: EmployeeModel, as: 'RequestedByEmployee' },
+        { model: DepartmentModel, as: 'Department' }
+      ]
+    });
+    if (!transaction) return res.status(404).json({ error: 'Transaction not found' });
+    res.status(200).json(transaction);
+  } catch (error) {
+    res.status(500).json({ error: error.message });
+  }
 };
 
 
 exports.delete = async (req, res) => {
   try {
-    throw new Error('Delete operation is not implemented. Not present in the old code.');
+    const { id } = req.params;
+    const transaction = await TransactionTableModel.findByPk(id);
+    if (!transaction) return res.status(404).json({ error: 'Transaction not found' });
+
+    await transaction.update({ Active: 0 });
+    res.json({ message: 'Deleted successfully' });
   } catch (error) {
+    res.status(500).json({ error: error.message });
+  }
+};
+
+exports.approve = async (req, res) => {
+  const t = await db.sequelize.transaction();
+  try {
+    const { ID } = req.body;
+    const transaction = await TransactionTableModel.findByPk(ID);
+    if (!transaction) throw new Error('Transaction not found');
+
+    const approvalProgress = Number(transaction.ApprovalProgress) || 0;
+
+    await transaction.update({
+      Status: 'Approved',
+      ApprovalProgress: approvalProgress + 1
+    }, { transaction: t });
+
+    // Log to ApprovalAudit
+    await db.ApprovalAudit.create({
+      LinkID: transaction.LinkID,
+      InvoiceLink: transaction.LinkID,
+      PositionorEmployee: 'Employee',
+      PositionorEmployeeID: req.user.employeeID,
+      SequenceOrder: approvalProgress,
+      ApprovalDate: new Date(),
+      CreatedBy: req.user.id,
+      CreatedDate: new Date(),
+      ApprovalVersion: transaction.ApprovalVersion
+    }, { transaction: t });
+
+    await t.commit();
+    res.json({ message: 'Approved successfully' });
+  } catch (error) {
+    await t.rollback();
+    res.status(500).json({ error: error.message });
+  }
+};
+
+exports.reject = async (req, res) => {
+  const t = await db.sequelize.transaction();
+  try {
+    const { ID, reason } = req.body;
+    const transaction = await TransactionTableModel.findByPk(ID);
+    if (!transaction) throw new Error('Transaction not found');
+
+    await transaction.update({
+      Status: 'Rejected'
+    }, { transaction: t });
+
+    // Log to ApprovalAudit
+    await db.ApprovalAudit.create({
+      LinkID: transaction.LinkID,
+      InvoiceLink: transaction.LinkID,
+      RejectionDate: new Date(),
+      Remarks: reason || '',
+      CreatedBy: req.user.id,
+      CreatedDate: new Date(),
+      ApprovalVersion: transaction.ApprovalVersion
+    }, { transaction: t });
+
+    await t.commit();
+    res.json({ message: 'Rejected successfully' });
+  } catch (error) {
+    await t.rollback();
     res.status(500).json({ error: error.message });
   }
 };

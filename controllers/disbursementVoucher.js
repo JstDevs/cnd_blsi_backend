@@ -1013,11 +1013,19 @@ exports.reject = async (req, res) => {
       { transaction: t }
     );
 
-    // 3. UPDATE other transaction with Posted, Disbursement Rejected
-    await TransactionTableModel.update(
-      { Status: 'Posted, Disbursement Rejected' },
-      { where: { InvoiceNumber: obligationNumber }, transaction: t }
-    );
+    // 3. UPDATE other transaction (OBR) with Posted, Disbursement Rejected if linked
+    if (trx.ObligationRequestNumber) {
+      await TransactionTableModel.update(
+        { Status: 'Posted, Disbursement Rejected' },
+        {
+          where: {
+            InvoiceNumber: trx.ObligationRequestNumber,
+            APAR: { [Op.like]: 'Obligation Request%' }
+          },
+          transaction: t
+        }
+      );
+    }
 
     // 4. INSERT into Approval Audit
     await ApprovalAuditModel.create(
