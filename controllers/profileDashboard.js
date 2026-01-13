@@ -81,12 +81,16 @@ exports.userDocumentsList = async (req, res) => {
 
     // Status counters
     let varApproved = 0;
+    let varPosted = 0;
     let varRequested = 0;
     let varRejected = 0;
     results.forEach(doc => {
       const status = doc.Status?.split(',')[0].trim();
       switch (status) {
         case 'Posted':
+          varPosted++;
+          break;
+        case 'Approved':
           varApproved++;
           break;
         case 'Requested':
@@ -100,9 +104,10 @@ exports.userDocumentsList = async (req, res) => {
 
     const statusCounts = {
       Approved: varApproved,
+      Posted: varPosted,
       Requested: varRequested,
       Rejected: varRejected,
-      Total: varApproved + varRequested + varRejected
+      Total: varApproved + varPosted + varRequested + varRejected
     };
 
     res.json({
