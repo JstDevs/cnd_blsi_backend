@@ -400,37 +400,31 @@ exports.update = async (req, res) => {
 
     await transaction.update(updatePayload, { transaction: t });
 
-    // Adjust Budget Balances: Subtract old items, add new items
-    const oldItems = await TransactionItems.findAll({ where: { LinkID: transaction.LinkID }, transaction: t });
-    const fund = await FundsModel.findByPk(FundsID, { transaction: t });
-    const isBudgetFund = fund?.Name !== 'Trust Fund' && fund?.Name !== 'Special Education Fund';
-
-    if (true) { // Enabled for all funds
-      for (const oldItem of oldItems) {
-        const budget = await Budget.findByPk(oldItem.ChargeAccountID, { transaction: t });
-        if (budget) {
-          const oldSubtotal = parseFloat(oldItem.Sub_Total || 0);
-          await budget.update({ PreEncumbrance: parseFloat(budget.PreEncumbrance || 0) - oldSubtotal }, { transaction: t });
-        }
-      }
+    // Aggregate all budget changes
+    const budgetChanges = {};
+    for (const oldItem of oldItems) {
+      const oldSubtotal = parseFloat(oldItem.Sub_Total || 0);
+      budgetChanges[oldItem.ChargeAccountID] = (budgetChanges[oldItem.ChargeAccountID] || 0) - oldSubtotal;
     }
 
     await TransactionItems.destroy({ where: { LinkID: transaction.LinkID }, transaction: t });
 
+    // Optimize: Pre-fetch all unique budget accounts for the items to avoid multiple queries in the loop
+    const uniqueChargeAccountIds = [...new Set(Items.map(i => i.ChargeAccountID))];
+    const budgets = await BudgetModel.findAll({
+      where: { ID: { [Op.in]: uniqueChargeAccountIds } },
+      include: [{ model: ChartofAccountsModel, as: 'ChartofAccounts', attributes: ['NormalBalance'] }],
+      transaction: t
+    });
+    const budgetMap = new Map(budgets.map(b => [b.ID, b]));
+
     for (const item of Items) {
-      const account = await BudgetModel.findOne({
-        where: { ID: item.ChargeAccountID },
-        include: [
-          {
-            model: ChartofAccountsModel,
-            as: 'ChartofAccounts',
-            attributes: ['NormalBalance'],
-          }
-        ]
-      });
+      const account = budgetMap.get(item.ChargeAccountID);
       if (!account) throw new Error(`Charge Account ID ${item.ChargeAccountID} not found`);
 
       const subTotal = parseFloat(item.Sub_Total || item.subtotal || 0);
+      budgetChanges[item.ChargeAccountID] = (budgetChanges[item.ChargeAccountID] || 0) + subTotal;
+
       const amountDue = parseFloat(item.AmountDue || item.subtotal || 0);
       const subtotalBeforeDiscount = parseFloat(item.Sub_Total || item.subtotalBeforeDiscount || 0);
 
@@ -461,7 +455,7 @@ exports.update = async (req, res) => {
         EWT: item.EWT || item.ewt,
         WithheldAmount: item.WithheldAmount || item.withheld,
         Sub_Total: subtotalBeforeDiscount,
-        EWTRate: item.EWTRate || item.ewtrate,
+        EWTRate: item.EWTRate || item.withheldEWT,
         Discounts: item.Discounts || item.discount,
         DiscountRate: item.DiscountRate,
         AmountDue: amountDue,
@@ -473,14 +467,15 @@ exports.update = async (req, res) => {
         NormalBalance: account.ChartofAccounts?.NormalBalance,
         ResponsibilityCenter: item.ResponsibilityCenter,
         Vatable: item.Vatable
-      });
+      }, { transaction: t });
+    }
 
-      if (isBudgetFund) {
-        const budget = await Budget.findByPk(item.ChargeAccountID, { transaction: t });
-        if (budget) {
-          const newPreEncumbrance = parseFloat(budget.PreEncumbrance || 0) + amountDue;
-          await budget.update({ PreEncumbrance: newPreEncumbrance }, { transaction: t });
-        }
+    // Apply aggregated budget changes
+    for (const [chargeId, diff] of Object.entries(budgetChanges)) {
+      if (diff > 0) {
+        await Budget.increment({ PreEncumbrance: diff }, { where: { ID: chargeId }, transaction: t });
+      } else if (diff < 0) {
+        await Budget.decrement({ PreEncumbrance: Math.abs(diff) }, { where: { ID: chargeId }, transaction: t });
       }
     }
 
@@ -566,26 +561,40 @@ exports.delete = async (req, res) => {
       });
 
       for (const [chargeAccountId, totalAmount] of Object.entries(budgetUpdates)) {
-        const budget = await Budget.findByPk(chargeAccountId, { transaction: t });
-        if (budget) {
-          const currentPreEnc = parseFloat(budget.PreEncumbrance || 0);
-          const newPreEncumbrance = Math.max(0, currentPreEnc - totalAmount);
-          await budget.update({ PreEncumbrance: newPreEncumbrance }, { transaction: t });
-        }
+        await Budget.decrement(
+          { PreEncumbrance: totalAmount },
+          { where: { ID: chargeAccountId }, transaction: t }
+        );
       }
     }
 
-    // --- Void Transaction and keep Items active ---
-    await transaction.update({ Status: 'Void', ModifyBy: req.user.id, ModifyDate: new Date() }, { transaction: t });
-    // We keep TransactionItems active so they still show up in the details view of a Voided OBR
-    await TransactionItems.update({ Active: true }, { where: { LinkID: transaction.LinkID }, transaction: t });
+    // --- Void Transaction ---
+    await transaction.update({
+      Status: 'Void',
+      ModifyBy: req.user.id,
+      ModifyDate: new Date()
+    }, { transaction: t });
+
+    // --- INSERT INTO Approval Audit (Void Action) ---
+    await ApprovalAudit.create(
+      {
+        LinkID: generateLinkID(), // Unique Link for this audit entry
+        InvoiceLink: transaction.LinkID,
+        RejectionDate: new Date(), // Using RejectionDate to signify "Voided" date in some systems, or just date
+        Remarks: "Transaction Voided by User",
+        CreatedBy: req.user.id,
+        CreatedDate: new Date(),
+        ApprovalVersion: transaction.ApprovalVersion
+      },
+      { transaction: t }
+    );
 
     await t.commit();
-    res.json({ success: true, message: "Transaction deleted successfully." });
+    res.json({ success: true, message: "Transaction voided successfully." });
 
   } catch (err) {
     if (t) await t.rollback();
-    console.error("Error deleting transaction:", err);
+    console.error("Error voiding transaction:", err);
     res.status(500).json({ error: err.message });
   }
 };
@@ -842,12 +851,10 @@ exports.rejectTransaction = async (req, res) => {
       });
 
       for (const [chargeAccountId, totalAmount] of Object.entries(budgetUpdates)) {
-        const budget = await Budget.findByPk(chargeAccountId, { transaction: t });
-        if (budget) {
-          const currentPreEnc = parseFloat(budget.PreEncumbrance || 0);
-          const newPreEncumbrance = Math.max(0, currentPreEnc - totalAmount);
-          await budget.update({ PreEncumbrance: newPreEncumbrance }, { transaction: t });
-        }
+        await Budget.decrement(
+          { PreEncumbrance: totalAmount },
+          { where: { ID: chargeAccountId }, transaction: t }
+        );
       }
     }
 
