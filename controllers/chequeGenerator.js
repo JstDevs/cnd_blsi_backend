@@ -1,9 +1,10 @@
-const db=require('../config/database')
+const db = require('../config/database')
 const BudgetModel = require('../config/database').Budget;
 const DocumentTypeModel = require('../config/database').documentType;
 const TransactionTableModel = require('../config/database').TransactionTable;
 const AttachmentModel = require('../config/database').Attachment;
 const CheckModel = require('../config/database').Check;
+const ApprovalAuditModel = require('../config/database').ApprovalAudit;
 const TransactionItemModel = require('../config/database').TransactionItems;
 const FiscalYearModel = require('../config/database').FiscalYear;
 const DepartmentModel = require('../config/database').department;
@@ -20,7 +21,7 @@ exports.save = async (req, res) => {
   const t = await db.sequelize.transaction();
   try {
     const parsedFields = {};
-    
+
     // Reconstruct Attachments array from fields like Attachments[0].ID starts
     const attachments = [];
     for (const key in req.body) {
@@ -35,7 +36,7 @@ exports.save = async (req, res) => {
     }
     parsedFields.Attachments = attachments;
     // Reconstruct Attachments array from fields like Attachments[0].ID ends
-    
+
     for (const key in req.body) {
       try {
         parsedFields[key] = JSON.parse(req.body[key]);
@@ -51,21 +52,21 @@ exports.save = async (req, res) => {
     const data = parsedFields;
 
     let IsNew = '';
-    if((data.IsNew == "true") || (data.IsNew === true) || (data.IsNew == '1') || (data.IsNew == 1)) {
+    if ((data.IsNew == "true") || (data.IsNew === true) || (data.IsNew == '1') || (data.IsNew == 1)) {
       IsNew = true;
     }
-    else if((data.IsNew == "false") || (data.IsNew === false) || (data.IsNew == '0') || (data.IsNew == 0)) {
+    else if ((data.IsNew == "false") || (data.IsNew === false) || (data.IsNew == '0') || (data.IsNew == 0)) {
       IsNew = false;
     }
     else {
       throw new Error('Invalid value for IsNew. Expected true or false.');
     }
-    
+
     let AddCondition = '';
-    if((data.AddCondition == "true") || (data.AddCondition === true) || (data.AddCondition == '1') || (data.AddCondition == 1)) {
+    if ((data.AddCondition == "true") || (data.AddCondition === true) || (data.AddCondition == '1') || (data.AddCondition == 1)) {
       AddCondition = true;
     }
-    else if((data.AddCondition == "false") || (data.AddCondition === false) || (data.AddCondition == '0') || (data.AddCondition == 0)) {
+    else if ((data.AddCondition == "false") || (data.AddCondition === false) || (data.AddCondition == '0') || (data.AddCondition == 0)) {
       AddCondition = false;
     }
     else {
@@ -186,5 +187,202 @@ exports.checkList = async (req, res) => {
 };
 
 exports.delete = async (req, res) => {
-  res.json({ message: 'Deleted logic not implemented, same in old software' });
+  const t = await db.sequelize.transaction();
+  try {
+    const { id } = req.params;
+
+    const check = await CheckModel.findByPk(id, { transaction: t });
+    if (!check) {
+      return res.status(404).json({ error: 'Check not found' });
+    }
+
+    // --- Void Check ---
+    await check.update({
+      Status: 'Void',
+      ModifyBy: req.user.id,
+      ModifyDate: new Date()
+    }, { transaction: t });
+
+    // --- Revert Related TransactionTable (DV) ---
+    if (check.DisbursementID) {
+      await TransactionTableModel.update(
+        { Status: 'Posted' },
+        { where: { LinkID: check.DisbursementID }, transaction: t }
+      );
+
+      // Find the DV to get the OBR link if any
+      const dv = await TransactionTableModel.findOne({
+        where: { LinkID: check.DisbursementID },
+        transaction: t
+      });
+
+      if (dv && dv.ObligationRequestNumber) {
+        await TransactionTableModel.update(
+          { Status: 'Posted, Disbursement Posted' },
+          {
+            where: {
+              InvoiceNumber: dv.ObligationRequestNumber,
+              APAR: { [Op.like]: 'Obligation Request%' }
+            },
+            transaction: t
+          }
+        );
+      }
+    }
+
+    // --- Log Void Action ---
+    await ApprovalAuditModel.create({
+      LinkID: generateLinkID(),
+      InvoiceLink: check.LinkID,
+      RejectionDate: new Date(),
+      Remarks: "Cheque Voided by User",
+      CreatedBy: req.user.id,
+      CreatedDate: new Date(),
+      ApprovalVersion: check.ApprovalVersion
+    }, { transaction: t });
+
+    await t.commit();
+    res.json({ success: true, message: "Cheque voided successfully." });
+
+  } catch (err) {
+    if (t) await t.rollback();
+    console.error("Error voiding cheque:", err);
+    res.status(500).json({ error: err.message });
+  }
+};
+
+exports.approve = async (req, res) => {
+  const { ID } = req.body;
+  const t = await db.sequelize.transaction();
+
+  try {
+    const check = await CheckModel.findOne({
+      where: { ID },
+      transaction: t
+    });
+
+    if (!check) throw new Error('Check not found');
+
+    if (check.Status === 'Posted') {
+      await t.rollback();
+      return res.json({ message: 'Check already posted.' });
+    }
+
+    // 1. Update Check Status
+    await check.update({ Status: 'Posted' }, { transaction: t });
+
+    // 2. Update Related TransactionTable (DV)
+    if (check.DisbursementID) {
+      await TransactionTableModel.update(
+        { Status: 'Posted, Cheque Posted' },
+        { where: { LinkID: check.DisbursementID }, transaction: t }
+      );
+
+      // Find the DV to get the OBR link if any
+      const dv = await TransactionTableModel.findOne({
+        where: { LinkID: check.DisbursementID },
+        transaction: t
+      });
+
+      if (dv && dv.ObligationRequestNumber) {
+        await TransactionTableModel.update(
+          { Status: 'Posted, Disbursement Posted, Cheque Posted' },
+          {
+            where: {
+              InvoiceNumber: dv.ObligationRequestNumber,
+              APAR: { [Op.like]: 'Obligation Request%' }
+            },
+            transaction: t
+          }
+        );
+      }
+    }
+
+    // 3. Log Approval
+    await ApprovalAuditModel.create({
+      LinkID: check.LinkID,
+      InvoiceLink: check.LinkID,
+      PositionorEmployee: "Employee",
+      PositionorEmployeeID: req.user.employeeID,
+      SequenceOrder: check.ApprovalProgress,
+      ApprovalOrder: 0,
+      ApprovalDate: new Date(),
+      CreatedBy: req.user.id,
+      CreatedDate: new Date(),
+      ApprovalVersion: check.ApprovalVersion
+    }, { transaction: t });
+
+    await t.commit();
+    res.json({ message: 'Approved successfully' });
+  } catch (err) {
+    await t.rollback();
+    console.error('Approve Check Error:', err);
+    res.status(500).json({ error: err.message });
+  }
+};
+
+exports.reject = async (req, res) => {
+  const { ID, reason } = req.body;
+  const t = await db.sequelize.transaction();
+
+  try {
+    const check = await CheckModel.findOne({
+      where: { ID },
+      transaction: t
+    });
+
+    if (!check) throw new Error('Check not found');
+
+    // 1. Update Check Status
+    await check.update({ Status: 'Rejected' }, { transaction: t });
+
+    // 2. Update Related TransactionTable (DV)
+    if (check.DisbursementID) {
+      await TransactionTableModel.update(
+        { Status: 'Posted, Cheque Rejected' },
+        { where: { LinkID: check.DisbursementID }, transaction: t }
+      );
+
+      // Find the DV to get the OBR link if any
+      const dv = await TransactionTableModel.findOne({
+        where: { LinkID: check.DisbursementID },
+        transaction: t
+      });
+
+      if (dv && dv.ObligationRequestNumber) {
+        await TransactionTableModel.update(
+          { Status: 'Posted, Disbursement Posted, Cheque Rejected' },
+          {
+            where: {
+              InvoiceNumber: dv.ObligationRequestNumber,
+              APAR: { [Op.like]: 'Obligation Request%' }
+            },
+            transaction: t
+          }
+        );
+      }
+    }
+
+    // 3. Log Rejection
+    await ApprovalAuditModel.create({
+      LinkID: check.LinkID,
+      InvoiceLink: check.LinkID,
+      PositionorEmployee: "Employee",
+      PositionorEmployeeID: req.user.employeeID,
+      SequenceOrder: check.ApprovalProgress,
+      ApprovalOrder: 0,
+      RejectionDate: new Date(),
+      Remarks: reason || '',
+      CreatedBy: req.user.id,
+      CreatedDate: new Date(),
+      ApprovalVersion: check.ApprovalVersion
+    }, { transaction: t });
+
+    await t.commit();
+    res.json({ message: 'Rejected successfully' });
+  } catch (err) {
+    await t.rollback();
+    console.error('Reject Check Error:', err);
+    res.status(500).json({ error: err.message });
+  }
 };
