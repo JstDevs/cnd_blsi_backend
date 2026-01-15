@@ -47,7 +47,8 @@ exports.save = async (req, res) => {
         DocumentTypeID: docID,
         InvoiceDate: new Date(),
         Total: data.AmountIssued,
-        FundsID: 1
+        FundsID: 1,
+        Active: true // Set Active to true to satisfy default scope
       }, { transaction: t });
 
     } else {
@@ -92,7 +93,7 @@ exports.getAll = async (req, res) => {
       },
       include: [
         {
-          model: TransactionTable,
+          model: TransactionTable.unscoped(),
           as: 'Transaction',
           required: false,
         }
@@ -111,23 +112,34 @@ exports.delete = async (req, res) => {
   const { id } = req.params;
   const t = await db.sequelize.transaction();
 
+  console.log(`--- [PUBLIC MARKET] Voiding record ID: ${id} ---`);
+
   try {
     // Find the PublicMarketTicketing record to get LinkID
     const ticket = await PublicMarketTicketing.findByPk(id);
 
     if (!ticket) {
+      console.error(`--- [PUBLIC MARKET] Ticket not found for ID: ${id} ---`);
       await t.rollback();
       return res.status(404).json({ error: 'Record not found.' });
     }
 
-    // Update TransactionTable Status to 'Void'
-    await TransactionTable.update(
+    console.log(`--- [PUBLIC MARKET] Found ticket with LinkID: ${ticket.LinkID} ---`);
+
+    // Update TransactionTable Status to 'Void' - Use unscoped() to bypass Active: true requirement
+    const [updatedRows] = await TransactionTable.unscoped().update(
       { Status: 'Void' },
       {
-        where: { LinkID: ticket.LinkID },
+        where: { LinkID: ticket.LinkID.toString() },
         transaction: t
       }
     );
+
+    console.log(`--- [PUBLIC MARKET] TransactionTable updated. Rows affected: ${updatedRows} ---`);
+
+    if (updatedRows === 0) {
+      console.warn(`--- [PUBLIC MARKET] No TransactionTable record found for LinkID: ${ticket.LinkID} ---`);
+    }
 
     // INSERT INTO Approval Audit (Void Action)
     await ApprovalAudit.create(
@@ -142,9 +154,10 @@ exports.delete = async (req, res) => {
     );
 
     await t.commit();
+    console.log(`--- [PUBLIC MARKET] Successfully voided ticket ${id} ---`);
     res.json({ message: 'success' });
   } catch (error) {
-    console.error('Error voiding record:', error);
+    console.error('--- [PUBLIC MARKET] Error voiding record: ---', error);
     if (t) await t.rollback();
     res.status(500).json({ error: 'Failed to void record.' });
   }
@@ -161,8 +174,8 @@ exports.approve = async (req, res) => {
       return res.status(404).json({ error: 'Record not found.' });
     }
 
-    const transaction = await TransactionTable.findOne({
-      where: { LinkID: ticket.LinkID }
+    const transaction = await TransactionTable.unscoped().findOne({
+      where: { LinkID: ticket.LinkID.toString() }
     });
 
     if (!transaction) {
@@ -210,8 +223,8 @@ exports.reject = async (req, res) => {
       return res.status(404).json({ error: 'Record not found.' });
     }
 
-    const transaction = await TransactionTable.findOne({
-      where: { LinkID: ticket.LinkID }
+    const transaction = await TransactionTable.unscoped().findOne({
+      where: { LinkID: ticket.LinkID.toString() }
     });
 
     if (!transaction) {

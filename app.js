@@ -131,7 +131,7 @@ const propertycoownersRoutes = require('./routes/propertyCoOwners');
 const propertyimprovedRoutes = require('./routes/propertyImproved');
 const propertytaxdeclarationRoutes = require('./routes/propertyTaxDeclaration');
 const provinceRoutes = require('./routes/province');
-const publicmarketticketingRoutes = require('./routes/publicMarketTicketing');
+const publicMarketTicketingRoutes = require('./routes/publicMarketTicketing');
 const purchaseitemsRoutes = require('./routes/purchaseItems');
 const regionRoutes = require('./routes/region');
 const scheduleofbaseunitmarketvalueRoutes = require('./routes/scheduleofBaseunitMarketValue');
@@ -158,7 +158,7 @@ const taxcertificatecorp = require('./routes/taxcertificatecorp')
 const realpropertytax = require("./routes/realpropertytax")
 const cashbook = require("./routes/cashbook")
 const collectionReport = require("./routes/collectionreport")
-const publicmarketticket = require("./routes/publicMarketTicketing")
+// Moved higher up
 const saoob = require("./routes/saoob")
 const bir = require("./routes/bir")
 const trialbalance = require("./routes/trialbalance")
@@ -259,7 +259,7 @@ app.use('/propertycoowners', propertycoownersRoutes);
 app.use('/propertyimproved', propertyimprovedRoutes);
 app.use('/propertytaxdeclaration', propertytaxdeclarationRoutes);
 app.use('/province', provinceRoutes);
-app.use('/publicmarketticketing', publicmarketticketingRoutes);
+app.use("/public-market-ticketing", publicMarketTicketingRoutes);
 app.use('/purchaseitems', purchaseitemsRoutes);
 app.use('/region', regionRoutes);
 app.use('/scheduleofbaseunitmarketvalue', scheduleofbaseunitmarketvalueRoutes);
@@ -289,7 +289,7 @@ app.use("/corporate-ctc", taxcertificatecorp)
 app.use("/real-property-tax", realpropertytax)
 app.use("/cashbook", cashbook)
 app.use("/collectionreport", collectionReport)
-app.use("/public-market-ticketing", publicmarketticket)
+// Moved higher up
 app.use("/generalservicerecipt", generalservicerecipt)
 app.use("/saoob", saoob)
 app.use("/bir", bir)
