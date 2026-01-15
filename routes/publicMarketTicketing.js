@@ -7,5 +7,7 @@ router.post('/save', requireAuth, controller.save);
 router.get('/', requireAuth, controller.getAll);
 // router.get('/:id', requireAuth, controller.getById);
 router.delete('/:id', requireAuth, controller.delete);
+router.post('/approve/:id', requireAuth, controller.approve);
+router.post('/reject/:id', requireAuth, controller.reject);
 
 module.exports = router;
