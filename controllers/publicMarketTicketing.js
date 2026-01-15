@@ -101,7 +101,13 @@ exports.getAll = async (req, res) => {
       order: [['ID', 'DESC']]
     });
 
-    res.json(records);
+    const flattenedRecords = records.map(r => {
+      const json = r.toJSON();
+      json.Status = json.Transaction ? json.Transaction.Status : 'Requested';
+      return json;
+    });
+
+    res.json(flattenedRecords);
   } catch (error) {
     console.error('Error fetching records:', error);
     res.status(500).json({ error: 'Failed to fetch data.' });
@@ -170,15 +176,19 @@ exports.approve = async (req, res) => {
   try {
     const ticket = await PublicMarketTicketing.findByPk(id);
     if (!ticket) {
+      console.error(`--- [PUBLIC MARKET] Ticket not found for approval. ID: ${id} ---`);
       await t.rollback();
       return res.status(404).json({ error: 'Record not found.' });
     }
+
+    console.log(`--- [PUBLIC MARKET] Approving ticket ID: ${id}, LinkID: ${ticket.LinkID} ---`);
 
     const transaction = await TransactionTable.unscoped().findOne({
       where: { LinkID: ticket.LinkID.toString() }
     });
 
     if (!transaction) {
+      console.error(`--- [PUBLIC MARKET] TransactionTable record not found for LinkID: ${ticket.LinkID} ---`);
       await t.rollback();
       return res.status(404).json({ error: 'Transaction record not found.' });
     }
@@ -204,9 +214,10 @@ exports.approve = async (req, res) => {
     }, { transaction: t });
 
     await t.commit();
+    console.log(`--- [PUBLIC MARKET] Successfully approved ticket ${id} ---`);
     res.json({ message: 'success' });
   } catch (error) {
-    console.error('Error approving record:', error);
+    console.error('--- [PUBLIC MARKET] Error approving record: ---', error);
     if (t) await t.rollback();
     res.status(500).json({ error: error.message });
   }
@@ -219,15 +230,19 @@ exports.reject = async (req, res) => {
   try {
     const ticket = await PublicMarketTicketing.findByPk(id);
     if (!ticket) {
+      console.error(`--- [PUBLIC MARKET] Ticket not found for rejection. ID: ${id} ---`);
       await t.rollback();
       return res.status(404).json({ error: 'Record not found.' });
     }
+
+    console.log(`--- [PUBLIC MARKET] Rejecting ticket ID: ${id}, LinkID: ${ticket.LinkID} ---`);
 
     const transaction = await TransactionTable.unscoped().findOne({
       where: { LinkID: ticket.LinkID.toString() }
     });
 
     if (!transaction) {
+      console.error(`--- [PUBLIC MARKET] TransactionTable record not found for LinkID: ${ticket.LinkID} ---`);
       await t.rollback();
       return res.status(404).json({ error: 'Transaction record not found.' });
     }
@@ -249,9 +264,10 @@ exports.reject = async (req, res) => {
     }, { transaction: t });
 
     await t.commit();
+    console.log(`--- [PUBLIC MARKET] Successfully rejected ticket ${id} ---`);
     res.json({ message: 'success' });
   } catch (error) {
-    console.error('Error rejecting record:', error);
+    console.error('--- [PUBLIC MARKET] Error rejecting record: ---', error);
     if (t) await t.rollback();
     res.status(500).json({ error: error.message });
   }
