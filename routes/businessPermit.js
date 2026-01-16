@@ -21,4 +21,10 @@ router.put('/:id', businessPermitController.update);
 // DELETE
 router.delete('/:id', businessPermitController.delete);
 
+// APPROVE
+router.post('/approve', businessPermitController.approve);
+
+// REJECT
+router.post('/reject', businessPermitController.reject);
+
 module.exports = router;

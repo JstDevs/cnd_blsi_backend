@@ -1,4 +1,4 @@
-const { BusinessPermit } = require('../config/database'); // Adjust path as needed
+const { BusinessPermit, ApprovalAudit, sequelize } = require('../config/database'); // Adjust path as needed
 
 // Get all Business Permits
 exports.getAll = async (req, res) => {
@@ -83,5 +83,66 @@ exports.delete = async (req, res) => {
     } catch (error) {
         console.error('Error deleting business permit:', error);
         res.status(500).json({ message: 'Failed to delete business permit', error: error.message });
+    }
+};
+
+exports.approve = async (req, res) => {
+    const { id } = req.body;
+    const t = await sequelize.transaction();
+    try {
+        const permit = await BusinessPermit.findByPk(id, { transaction: t });
+
+        if (!permit) throw new Error('Business permit not found.');
+
+        await permit.update({ status: 'Posted' }, { transaction: t });
+
+        await ApprovalAudit.create({
+            LinkID: id,
+            InvoiceLink: id,
+            PositionorEmployee: "Employee",
+            PositionorEmployeeID: req.user.employeeID,
+            SequenceOrder: 0,
+            ApprovalOrder: 0,
+            ApprovalDate: new Date(),
+            CreatedBy: req.user.id,
+            CreatedDate: new Date(),
+            ApprovalVersion: "1"
+        }, { transaction: t });
+
+        await t.commit();
+        res.json({ message: 'Business permit approved and posted successfully.' });
+    } catch (error) {
+        await t.rollback();
+        console.error('Error approving business permit:', error);
+        res.status(500).json({ error: error.message });
+    }
+};
+
+exports.reject = async (req, res) => {
+    const { id, reason } = req.body;
+    const t = await sequelize.transaction();
+    try {
+        const permit = await BusinessPermit.findByPk(id, { transaction: t });
+
+        if (!permit) throw new Error('Business permit not found.');
+
+        await permit.update({ status: 'Rejected' }, { transaction: t });
+
+        await ApprovalAudit.create({
+            LinkID: id,
+            InvoiceLink: id,
+            Remarks: reason,
+            RejectionDate: new Date(),
+            CreatedBy: req.user.id,
+            CreatedDate: new Date(),
+            ApprovalVersion: "1"
+        }, { transaction: t });
+
+        await t.commit();
+        res.json({ message: 'Business permit rejected successfully.' });
+    } catch (error) {
+        await t.rollback();
+        console.error('Error rejecting business permit:', error);
+        res.status(500).json({ error: error.message });
     }
 };
