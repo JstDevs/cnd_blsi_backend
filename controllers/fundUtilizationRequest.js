@@ -5,8 +5,8 @@
 // const FundsModel = require('../config/database').Funds;
 // const ChartOfAccountsModel = require('../config/database').ChartofAccounts;
 // const { col } = require('sequelize');
-const { ApprovalAudit } = require('../config/database');
-const { hasAcccess } = require('../utils/checkUserAccess');
+const { ApprovalAudit, documentType: DocumentTypeModel } = require('../config/database');
+const { hasAccess } = require('../utils/checkUserAccess');
 const TransactionTableModel = require('../config/database').TransactionTable;
 const FundsModel = require('../config/database').Funds;
 const BudgetModel = require('../config/database').Budget;
@@ -781,9 +781,9 @@ exports.getAll = async (req, res) => {
 
 exports.getById = async (req, res) => {
   try {
-    const item = await beginningBalance.findByPk(req.params.id);
+    const item = await TransactionTableModel.findByPk(req.params.id);
     if (item) res.json(item);
-    else res.status(404).json({ message: "beginningBalance not found" });
+    else res.status(404).json({ message: "Transaction not found" });
   } catch (err) {
     res.status(500).json({ error: err.message });
   }
@@ -810,7 +810,7 @@ exports.approveTransaction = async (req, res) => {
 
     let newStatus = transaction.Status;
     if (!alreadyPosted) {
-      newStatus = (approvalProgress >= NumberOfApproverPerSequence) ? "Posted" : "Requested";
+      newStatus = (Number(ApprovalProgress) >= Number(NumberOfApproverPerSequence)) ? "Posted" : "Requested";
     }
 
     await transaction.update({ ApprovalProgress, Status: newStatus, InvoiceNumber: newInvoiceNumber }, { transaction: t });
@@ -829,7 +829,7 @@ exports.approveTransaction = async (req, res) => {
         }
       }
       // Update DocType series
-      await DocumentTypeModel.update({ CurrentNumber: currentNumber }, { where: { Name: "Fund Utilization Request" }, transaction: t });
+      await DocumentTypeModel.update({ CurrentNumber: Number(currentNumber) }, { where: { Name: "Fund Utilization Request" }, transaction: t });
     }
 
     await ApprovalAudit.create({
@@ -885,10 +885,13 @@ exports.rejectTransaction = async (req, res) => {
 };
 
 exports.delete = async (req, res) => {
-    const transactionId = req.params.id;
-  const t = await sequelize.transaction();
+  const { ID: transactionId } = req.body;
+  const t = await db.sequelize.transaction();
   try {
-    const trx = await TransactionTable.findOne({ where: { ID: transactionId }, transaction: t });
+    const trx = await TransactionTableModel.findOne({
+      where: { ID: transactionId },
+      transaction: t,
+    });
 
     if (!trx) {
       return res.status(404).json({ message: 'Transaction not found.' });
@@ -898,23 +901,28 @@ exports.delete = async (req, res) => {
     await trx.update({ Status: 'Void' }, { transaction: t });
 
     // Log the void action
-    await ApprovalAudit.create({
-      LinkID: trx.LinkID,
-      InvoiceLink: trx.LinkID,
-      PositionorEmployee: "Employee",
-      PositionorEmployeeID: req.user.employeeID,
-      SequenceOrder: trx.ApprovalProgress || 0,
-      ApprovalOrder: 0,
-      Remarks: "Voided",
-      RejectionDate: new Date(),
-      CreatedBy: req.user.id,
-      CreatedDate: new Date(),
-      ApprovalVersion: trx.ApprovalVersion || "1"
-    }, { transaction: t });
+    await ApprovalAudit.create(
+      {
+        LinkID: generateLinkID(),
+        InvoiceLink: trx.LinkID,
+        PositionEmployeeID: req.user.employeeID,
+        SequenceOrder: trx.ApprovalProgress || 0,
+        ApprovalOrder: 0,
+        Remarks: 'Voided',
+        RejectionDate: new Date(),
+        CreatedBy: req.user.id,
+        CreatedDate: new Date(),
+        ApprovalVersion: trx.ApprovalVersion || '1',
+      },
+      { transaction: t }
+    );
 
     await t.commit();
-    res.status(200).json({ message: 'FURS record voided successfully', ID: transactionId, Status: 'Void' });
-
+    res.status(200).json({
+      message: 'FURS record voided successfully',
+      ID: transactionId,
+      Status: 'Void',
+    });
   } catch (error) {
     if (t) await t.rollback();
     console.error('Error voiding transaction:', error);
