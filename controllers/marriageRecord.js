@@ -299,7 +299,7 @@ exports.reject = async (req, res) => {
 
     if (!trx) throw new Error('Transaction not found.');
 
-    await trx.update({ Status: ' Rejected ' }, { transaction: t });
+    await trx.update({ Status: 'Rejected' }, { transaction: t });
 
     await ApprovalAudit.create({
       LinkID: trx.LinkID,
