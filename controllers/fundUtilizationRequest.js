@@ -5,6 +5,8 @@
 // const FundsModel = require('../config/database').Funds;
 // const ChartOfAccountsModel = require('../config/database').ChartofAccounts;
 // const { col } = require('sequelize');
+const { ApprovalAudit } = require('../config/database');
+const { hasAcccess } = require('../utils/checkUserAccess');
 const TransactionTableModel = require('../config/database').TransactionTable;
 const FundsModel = require('../config/database').Funds;
 const BudgetModel = require('../config/database').Budget;
@@ -22,6 +24,21 @@ const generateLinkID = require("../utils/generateID")
 const db = require('../config/database')
 const { Op, literal } = require('sequelize');
 const getLatestApprovalVersion = require('../utils/getLatestApprovalVersion');
+
+async function getCurrentNumber(transaction) {
+  let currentNumber = 1;
+  const docType = await DocumentTypeModel.findOne({
+    where: { Name: "Fund Utilization Request" },
+    attributes: ["CurrentNumber"],
+    transaction
+  });
+
+  if (docType) {
+    currentNumber = (docType.CurrentNumber || 0) + 1;
+  }
+  return currentNumber.toString().padStart(4, "0");
+
+}
 
 exports.save = async (req, res) => {
   const t = await db.sequelize.transaction();
@@ -769,5 +786,138 @@ exports.getById = async (req, res) => {
     else res.status(404).json({ message: "beginningBalance not found" });
   } catch (err) {
     res.status(500).json({ error: err.message });
+  }
+};
+
+exports.approveTransaction = async (req, res) => {
+  const t = await db.sequelize.transaction();
+  try {
+    const { ID, LinkID, ApprovalLinkID, ApprovalProgress, NumberOfApproverPerSequence, FundsID, ApprovalVersion, ApprovalOrder } = req.body;
+
+    const transaction = await TransactionTableModel.findByPk(ID, { transaction: t });
+    if (!transaction) throw new Error("Transaction not found");
+    if (transaction.Status === 'Void') throw new Error("Cannot approve a Voided transaction.");
+
+    const alreadyPosted = transaction.Status === "Posted";
+    const now = new Date();
+    let newInvoiceNumber = transaction.InvoiceNumber;
+    let currentNumber = null;
+
+    if (!alreadyPosted) {
+      currentNumber = await getCurrentNumber(t);
+      newInvoiceNumber = `${FundsID}-${now.getFullYear()}-${String(now.getMonth() + 1).padStart(2, "0")}-${currentNumber}`;
+    }
+
+    let newStatus = transaction.Status;
+    if (!alreadyPosted) {
+      newStatus = (approvalProgress >= NumberOfApproverPerSequence) ? "Posted" : "Requested";
+    }
+
+    await transaction.update({ ApprovalProgress, Status: newStatus, InvoiceNumber: newInvoiceNumber }, { transaction: t });
+
+    if (newStatus === "Posted" && !alreadyPosted) {
+      // Logic to move PreEncumbrance to Encumbrance in Budget
+      const items = await TransactionItemsModel.findAll({ where: { LinkID: transaction.LinkID }, transaction: t });
+      for (const item of items) {
+        const budget = await BudgetModel.findByPk(item.ChargeAccountID, { transaction: t });
+        if (budget) {
+          const amount = Number(item.AmountDue || 0);
+          await budget.update({
+            PreEncumbrance: Math.max(0, Number(budget.PreEncumbrance) - amount),
+            Encumbrance: Number(budget.Encumbrance) + amount
+          }, { transaction: t });
+        }
+      }
+      // Update DocType series
+      await DocumentTypeModel.update({ CurrentNumber: currentNumber }, { where: { Name: "Fund Utilization Request" }, transaction: t });
+    }
+
+    await ApprovalAudit.create({
+      LinkID: ApprovalLinkID,
+      InvoiceLink: transaction.LinkID,
+      PositionEmployeeID: req.user.employeeID,
+      SequenceOrder: ApprovalOrder,
+      ApprovalDate: now,
+      CreatedBy: req.user.id,
+      CreatedDate: now,
+      ApprovalVersion
+    }, { transaction: t });
+
+    await t.commit();
+    res.json({ success: true, message: "Approved successfully" });
+  } catch (err) {
+    if (t) await t.rollback();
+    res.status(500).json({ error: err.message });
+  }
+};
+
+exports.rejectTransaction = async (req, res) => {
+  const t = await db.sequelize.transaction();
+  try {
+    const { ID, ApprovalLinkID, Reason } = req.body;
+    const transaction = await TransactionTableModel.findByPk(ID, { transaction: t });
+    if (!transaction || transaction.Status === 'Void') throw new Error("Invalid transaction");
+
+    await transaction.update({ Status: "Rejected" }, { transaction: t });
+
+    // Revert PreEncumbrance
+    const items = await TransactionItemsModel.findAll({ where: { LinkID: transaction.LinkID }, transaction: t });
+    for (const item of items) {
+      await BudgetModel.decrement({ PreEncumbrance: Number(item.AmountDue || 0) }, { where: { ID: item.ChargeAccountID }, transaction: t });
+    }
+
+    await ApprovalAudit.create({
+      LinkID: ApprovalLinkID,
+      InvoiceLink: transaction.LinkID,
+      RejectionDate: new Date(),
+      Remarks: Reason,
+      CreatedBy: req.user.id,
+      CreatedDate: new Date(),
+      ApprovalVersion: transaction.ApprovalVersion
+    }, { transaction: t });
+
+    await t.commit();
+    res.json({ success: true, message: "Rejected successfully" });
+  } catch (err) {
+    if (t) await t.rollback();
+    res.status(500).json({ error: err.message });
+  }
+};
+
+exports.delete = async (req, res) => {
+    const transactionId = req.params.id;
+  const t = await sequelize.transaction();
+  try {
+    const trx = await TransactionTable.findOne({ where: { ID: transactionId }, transaction: t });
+
+    if (!trx) {
+      return res.status(404).json({ message: 'Transaction not found.' });
+    }
+
+    // Update status to Void
+    await trx.update({ Status: 'Void' }, { transaction: t });
+
+    // Log the void action
+    await ApprovalAudit.create({
+      LinkID: trx.LinkID,
+      InvoiceLink: trx.LinkID,
+      PositionorEmployee: "Employee",
+      PositionorEmployeeID: req.user.employeeID,
+      SequenceOrder: trx.ApprovalProgress || 0,
+      ApprovalOrder: 0,
+      Remarks: "Voided",
+      RejectionDate: new Date(),
+      CreatedBy: req.user.id,
+      CreatedDate: new Date(),
+      ApprovalVersion: trx.ApprovalVersion || "1"
+    }, { transaction: t });
+
+    await t.commit();
+    res.status(200).json({ message: 'FURS record voided successfully', ID: transactionId, Status: 'Void' });
+
+  } catch (error) {
+    if (t) await t.rollback();
+    console.error('Error voiding transaction:', error);
+    return res.status(500).json({ error: error.message || 'Server error.' });
   }
 };
