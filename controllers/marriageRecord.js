@@ -1,11 +1,12 @@
 // const {  } = require('../config/database');
-const { sequelize, MarriageRecord, TransactionTable, Attachment, documentType, Customer, employee } = require('../config/database');
+const { sequelize, MarriageRecord, TransactionTable, Attachment, documentType, Customer, employee, ApprovalAudit } = require('../config/database');
 const PaymentMethodModel = require('../config/database').paymentMethod;
 const db = require('../config/database');
 const generateLinkID = require("../utils/generateID")
 const {getAllWithAssociations}=require("../models/associatedDependency");
 const getLatestApprovalVersion = require('../utils/getLatestApprovalVersion');
 const { Op, fn, col, literal } = require('sequelize');
+const Position = require('../models/Position');
 
 exports.saveTransaction = async (req, res) => {
   const t = await sequelize.transaction();
@@ -256,5 +257,68 @@ exports.delete = async (req, res) => {
   } catch (error) {
     console.error('Error deleting transaction:', error);
     return res.status(500).json({ error: error.message || 'Server error.' });
+  }
+};
+
+exports.approve = async (req, res) => {
+  const { ID } = req.body;
+  const t = await sequelize.transaction();
+  try {
+    const trx = await TransactionTable.findOne({ where: { ID }, transaction: t });
+
+    if (!trx) throw new Error('Transaction not found.');
+
+    await trx.update({ Status: 'Approved' }, { transaction: t });
+
+    await ApprovalAudit.create({
+      LinkID: trx.LinkID,
+      InvoiceLink: trx.LinkID,
+      PositionorEmployee: "Employee",
+      PositionorEmployeeID: req.user.employeeID,
+      SequenceOrder: trx.ApprovalProgress,
+      ApprovalOrder: 0,
+      ApprovalDate: new Date(),
+      CreatedBy: req.user.id,
+      CreatedDate: new Date(),
+      ApprovalVersion: trx.ApprovalVersion
+    }, { transaction: t });
+
+    await t.commit();
+    res.json({ message: 'Transaction approved successfully.' });
+  } catch (error) { 
+    await t.rollback();
+    res.status(500).json({ error: error.message });
+  }
+};
+
+exports.reject = async (req, res) => {
+  const { ID } = req.body;
+  const t = await sequelize.transaction();
+  try {
+    const trx = await TransactionTable.findOne ({ where: { ID }, transaction: t });
+
+    if (!trx) throw new Error('Transaction not found.');
+
+    await trx.update({ Status: ' Rejected ' }, { transaction: t });
+
+    await ApprovalAudit.create({
+      LinkID: trx.LinkID,
+      InvoiceLink: trx.LinkID,
+      PositionorEmployee: "Employee",
+      PositionorEmployeeID: req.user.employeeID,
+      SequenceOrder: trx.ApprovalProgress,
+      ApprovalOrder: 0,
+      ApprovalDate: new Date(),
+      CreatedBy: req.user.id,
+      CreatedDate: new Date(),
+      ApprovalVersion: trx.ApprovalVersion
+    }, { transaction: t });
+
+    await t.commit();
+    res.json({ message: 'Transaction rejected successfully.' });
+     
+  } catch (error) {
+    await t.rollback();
+    res.status(500).json({ error: error.message });
   }
 };
