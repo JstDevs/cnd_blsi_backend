@@ -541,6 +541,10 @@ exports.delete = async (req, res) => {
       return res.status(404).json({ error: 'Transaction not found' });
     }
 
+    if (transaction.Status === 'Void') {
+      throw new Error('Transaction is already voided.');
+    }
+
     if (transaction.Status === 'Posted') {
       throw new Error('Cannot delete a Posted Obligation Request. Please reject or reverse it instead.');
     }

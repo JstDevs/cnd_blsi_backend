@@ -967,6 +967,10 @@ exports.delete = async (req, res) => {
       return res.status(404).json({ message: 'Transaction not found.' });
     }
 
+    if (trx.Status === 'Void') {
+      throw new Error('Transaction is already voided.');
+    }
+
     if (trx.Status === 'Posted') {
       throw new Error('Cannot void a Posted Fund Utilization Request. Please reject or reverse it instead.');
     }

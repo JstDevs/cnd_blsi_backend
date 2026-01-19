@@ -822,9 +822,67 @@ exports.getById = async (req, res) => {
 
 
 exports.delete = async (req, res) => {
+  const t = await db.sequelize.transaction();
   try {
-    throw new Error('delete is not implemented for Disbursement Vouchers');
+    const { id } = req.params;
+
+    const transaction = await TransactionTableModel.findByPk(id, { transaction: t });
+    if (!transaction) throw new Error('Transaction not found');
+
+    if (transaction.Status === 'Void') {
+      throw new Error('Transaction is already voided.');
+    }
+
+    if (transaction.Status.includes('Posted')) {
+      // Optional: Add specific logic if you want to allow voiding posted DVs (w/ reversals), 
+      // but typically we block or require reversal. 
+      // For now, blocking to match pattern unless requested otherwise.
+      // throw new Error('Cannot void a Posted Disbursement Voucher.');
+    }
+
+    // Update Status to Void
+    await transaction.update({
+      Status: 'Void',
+      ModifyBy: req.user.id,
+      ModifyDate: new Date()
+    }, { transaction: t });
+
+    // Revert OBR status if linked
+    if (transaction.ObligationRequestNumber) {
+      await TransactionTableModel.update(
+        { Status: "Posted" },
+        {
+          where: {
+            InvoiceNumber: transaction.ObligationRequestNumber,
+            APAR: {
+              [Op.or]: [
+                { [Op.like]: "Obligation Request%" },
+                { [Op.like]: "Fund Utilization Request%" }
+              ]
+            }
+          },
+          transaction: t
+        }
+      );
+    }
+
+    // Insert into Approval Audit
+    await ApprovalAuditModel.create({
+      LinkID: generateLinkID(),
+      InvoiceLink: transaction.LinkID,
+      RejectionDate: new Date(),
+      Remarks: "Voided by user",
+      CreatedBy: req.user.id,
+      CreatedDate: new Date(),
+      ApprovalVersion: transaction.ApprovalVersion
+    }, { transaction: t });
+
+    await t.commit();
+    res.json({ success: true, message: "Disbursement Voucher voided successfully." });
+
   } catch (err) {
+    await t.rollback();
+    console.error("Error voiding DV:", err);
     res.status(500).json({ error: err.message });
   }
 };
