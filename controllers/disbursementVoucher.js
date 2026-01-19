@@ -516,67 +516,68 @@ exports.selectListForDV = async (req, res) => {
       }
     };
 
-    let includeModel = null;
+    let includeModels = [
+      {
+        model: FundsModel,
+        as: 'sourceFunds',
+        required: false,
+      },
+      {
+        model: TransactionItems,
+        as: 'TransactionItemsAll',
+        required: false,
+        include: [
+          {
+            model: ItemModel,
+            as: 'Item',
+            required: false,
+          },
+          {
+            model: BudgetModel,
+            as: 'ChargeAccount',
+            include: [
+              {
+                model: ChartofAccountsModel,
+                as: 'ChartofAccounts',
+                required: false,
+              }
+            ],
+            required: false,
+          },
+        ]
+      },
+      {
+        model: EmployeeModel,
+        as: 'Employee',
+        attributes: ['FirstName', 'MiddleName', 'LastName', 'StreetAddress', 'ID'],
+        required: false,
+      },
+      {
+        model: VendorModel,
+        as: 'Vendor',
+        attributes: ['Name', 'TIN', 'StreetAddress', 'ID'],
+        required: false,
+      },
+      {
+        model: CustomerModel,
+        as: 'Customer',
+        attributes: ['Name', 'TIN', 'StreetAddress', 'ID'],
+        required: false,
+      }
+    ];
 
     if (type === 'Employee') {
       whereCondition.EmployeeID = id;
-      includeModel = {
-        model: EmployeeModel,
-        as: 'Employee',
-        attributes: ['FirstName', 'MiddleName', 'LastName', 'StreetAddress'],
-      };
     } else if (type === 'Vendor') {
       whereCondition.VendorID = id;
-      includeModel = {
-        model: VendorModel,
-        as: 'Vendor',
-        attributes: ['Name', 'TIN', 'StreetAddress'],
-      };
     } else if (type === 'Individual') {
       whereCondition.CustomerID = id;
-      includeModel = {
-        model: CustomerModel,
-        as: 'Customer',
-        attributes: ['Name', 'TIN', 'StreetAddress'],
-      };
-    } else {
-      throw new Error('Invalid type specified');
     }
+    // If type is empty, we don't add a specific payee ID filter, returning all posted requests.
 
     const results = await TransactionTableModel.findAll({
       where: whereCondition,
-      include: [
-        includeModel,
-        {
-          model: FundsModel,
-          as: 'sourceFunds',
-          required: false,
-        },
-        {
-          model: TransactionItems,
-          as: 'TransactionItemsAll',
-          required: false,
-          include: [
-            {
-              model: ItemModel,
-              as: 'Item',
-              required: false,
-            },
-            {
-              model: BudgetModel,
-              as: 'ChargeAccount',
-              include: [
-                {
-                  model: ChartofAccountsModel,
-                  as: 'ChartofAccounts',
-                  required: false,
-                }
-              ],
-              required: false,
-            },
-          ]
-        },
-      ],
+      include: includeModels,
       order: [['InvoiceDate', 'ASC']],
     });
 
