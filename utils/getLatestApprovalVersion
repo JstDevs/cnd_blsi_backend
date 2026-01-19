@@ -23,15 +23,17 @@ async function getLatestApprovalVersion(likeString) {
 
     const version = result?.LatestVersion;
 
+    // Return null if no approval matrix found (allows posting without approval workflow)
     if (!version) {
-      throw new Error("Version of Approval Workflow doesn't exist. Create an approval for this document type first!");
+      console.warn(`⚠️ No approval matrix found for: "${likeString}". Document will be posted without approval workflow.`);
+      return null;
     }
 
     return version;
 
   } catch (err) {
-    console.warn('⚠️ Approval matrix not found:', err.message);
-    throw new Error('The approval matrix has not been set for this document type! Create it first');
+    console.warn('⚠️ Error retrieving approval version:', err.message);
+    return null;
   }
 }
 

@@ -74,12 +74,22 @@ exports.save = async (req, res) => {
     if (!doc) throw new Error(`Document type ID ${docTypeID} not found.`);
 
     const invoiceText = `${doc.Prefix}-${String(doc.CurrentNumber).padStart(5, '0')}-${doc.Suffix}`;
+    let statusValue = '';
+    const matrixExists = await db.ApprovalMatrix.findOne({
+      where: {
+        DocumentTypeID: 22,
+        Active: 1,
+      },
+      transaction: t
+    });
+    
+    statusValue = matrixExists ? 'Requested' : 'Posted';
     const approvalVersion = await getLatestApprovalVersion('Budget Transfer');
 
     if (IsNew) {
       await TransactionTableModel.create({
         LinkID,
-        Status: 'Requested',
+        Status: statusValue,
         APAR: 'Budget Transfer',
         DocumentTypeID: docTypeID,
         RequestedBy: userID,
@@ -109,7 +119,7 @@ exports.save = async (req, res) => {
         BudgetID: data.BudgetID,
         TargetID: data.TargetID,
         ApprovalProgress: 0,
-        Status: 'Requested'
+        Status: statusValue
       }, {
         where: { LinkID },
         transaction: t

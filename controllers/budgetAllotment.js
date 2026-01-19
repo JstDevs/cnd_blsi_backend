@@ -78,7 +78,7 @@ exports.save = async (req, res) => {
       console.log('[BudgetAllotment.save] Latest approval version:', latestapprovalversion);
     } catch (err) {
       console.error('[BudgetAllotment.save] Error getting approval version:', err.message);
-      throw err;
+      latestapprovalversion = null;
     }
 
     let invoiceText = '';
@@ -89,12 +89,23 @@ exports.save = async (req, res) => {
       if (!doc) throw new Error('Document type ID 20 not found.');
 
       invoiceText = `${doc.Prefix}-${String(doc.CurrentNumber).padStart(5, '0')}-${doc.Suffix}`;
+      
+      let statusValue = '';
+      const matrixExists = await db.ApprovalMatrix.findOne({
+        where: {
+          DocumentTypeID: 20,
+          Active: 1,
+        },
+        transaction: t
+      });
+
+      statusValue = matrixExists ? 'Requested' : 'Posted';
 
       // Step 2: Insert into TransactionTable
       console.log('[BudgetAllotment.save] Creating transaction with amount:', amount);
       await TransactionTableModel.create({
         LinkID: LinkID,
-        Status: 'Requested',
+        Status: statusValue,
         APAR: 'Allotment Release Order',
         DocumentTypeID: 20,
         RequestedBy: userID,
@@ -125,7 +136,7 @@ exports.save = async (req, res) => {
         Total: amount,
         Remarks: data.Remarks,
         ApprovalProgress: 0,
-        Status: 'Requested'
+        Status: statusValue
       }, {
         where: { LinkID: LinkID },
         transaction: t
@@ -180,12 +191,12 @@ exports.budgetList = async (req, res) => {
     const budgets = await BudgetModel.findAll({
       where: whereClause,
       include: [
-        { model: FiscalYearModel, as: 'FiscalYear', required: false },
-        { model: DepartmentModel, as: 'Department', required: false },
-        { model: SubDepartmentModel, as: 'SubDepartment', required: false },
-        { model: ChartOfAccountsModel, as: 'ChartofAccounts', required: false },
-        { model: FundModel, as: 'Funds', required: false },
-        { model: ProjectModel, as: 'Project', required: false }
+        { model: FiscalYearModel,       as: 'FiscalYear',       required: false },
+        { model: DepartmentModel,       as: 'Department',       required: false },
+        { model: SubDepartmentModel,    as: 'SubDepartment',    required: false },
+        { model: ChartOfAccountsModel,  as: 'ChartofAccounts',  required: false },
+        { model: FundModel,             as: 'Funds',            required: false },
+        { model: ProjectModel,          as: 'Project',          required: false }
       ],
       order: [['TotalAmount', 'ASC']]
     });

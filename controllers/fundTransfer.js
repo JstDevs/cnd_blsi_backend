@@ -62,12 +62,22 @@ exports.save = async (req, res) => {
 
     const suffix = doc.Suffix ? `-${doc.Suffix}` : '';
     const invoiceText = `${doc.Prefix}-${String(doc.CurrentNumber).padStart(5, '0')}${suffix}`;
+    let statusValue = '';
+    const matrixExists = await db.ApprovalMatrix.findOne({
+      where: {
+        DocumentTypeID: 26,
+        Active: 1,
+      },
+      transaction: t
+    });
+        
+    statusValue = matrixExists ? 'Requested' : 'Posted';
     const approvalVersion = await getLatestApprovalVersion('Fund Transfer');
 
     // Insert Transaction Table Record
     await TransactionTableModel.create({
       LinkID,
-      Status: 'Requested',
+      Status: statusValue,
       APAR: 'Fund Transfer',
       DocumentTypeID: docTypeID,
       RequestedBy: 1,
