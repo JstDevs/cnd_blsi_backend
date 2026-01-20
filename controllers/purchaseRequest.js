@@ -32,14 +32,26 @@ exports.create = async (req, res) => {
     // generate linkID
     const LinkID = generateLinkID();
 
+    const docID = 28;
+    let statusValue = '';
+    const matrixExists = await db.ApprovalMatrix.findOne({
+      where: {
+        DocumentTypeID: docID,
+        Active: 1,
+      },
+      transaction: t
+    });
+    
+    statusValue = matrixExists ? 'Requested' : 'Posted';
+
     // get approval version
     const approvalVersion = await getLatestApprovalVersion('Journal Entry Voucher');
 
     const newRecord = await TransactionTableModel.create({
       LinkID,
-      Status: 'Requested',
+      Status: statusValue,
       APAR: 'Purchase Request',
-      DocumentTypeID: 28,
+      DocumentTypeID: docID,
       RequestedBy: req.user.employeeID,
       InvoiceDate,
       InvoiceNumber,
@@ -175,7 +187,7 @@ exports.update = async (req, res) => {
 
     // 4. Update transaction
     await TransactionTableModel.update({
-      Status: 'Requested',
+      Status: statusValue,
       RequestedBy: req.user.employeeID,
       InvoiceDate,
       ApprovalProgress: 0,

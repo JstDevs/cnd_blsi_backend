@@ -89,13 +89,24 @@ exports.create = async (req, res) => {
     }
 
     const invoiceNo = await makeInvoiceNumberTravelOrder(req.user.departmentCode);
+    const docID = 15;
+    let statusValue = '';
+    const matrixExists = await db.ApprovalMatrix.findOne({
+      where: {
+        DocumentTypeID: docID,
+        Active: 1,
+      },
+      transaction: t
+    });
+    
+    statusValue = matrixExists ? 'Requested' : 'Posted';
     const latestApprovalVersion = await getLatestApprovalVersion('Allotment Release Order');
 
     await TransactionTableModel.create({
       LinkID,
-      Status: 'Requested',
+      Status: statusValue,
       APAR: 'Travel Order',
-      DocumentTypeID: 15,
+      DocumentTypeID: docID,
       RequestedBy: req.user.employeeID,
       InvoiceDate: new Date(),
       InvoiceNumber: invoiceNo,

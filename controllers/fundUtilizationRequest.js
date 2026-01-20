@@ -118,8 +118,20 @@ exports.save = async (req, res) => {
     CustomerID = Number(CustomerID) || 0;
     EmployeeID = Number(EmployeeID) || 0;
 
+    const docID = 31;
+    let statusValue = '';
+    const matrixExists = await db.ApprovalMatrix.findOne({
+      where: {
+        DocumentTypeID: docID,
+        Active: 1,
+      },
+      transaction: t
+    });
+    
+    statusValue = matrixExists ? 'Requested' : 'Posted';
+
     const furData = {
-      DocumentTypeID: 31,
+      DocumentTypeID: docID,
       LinkID: refID,
       APAR: 'Fund Utilization Request',
       VendorID: VendorID,
@@ -128,7 +140,7 @@ exports.save = async (req, res) => {
       ResponsibilityCenter: data.ResponsibilityCenter,
       Total: data.Total,
       RequestedBy: req.user.employeeID,
-      Status: 'Requested',
+      Status: statusValue,
       Active: true,
       CreatedBy: req.user.id,
       Credit: data.Total,
@@ -363,7 +375,7 @@ exports.create = async (req, res) => {
 
     const newRecord = await TransactionTableModel.create(
       {
-        DocumentTypeID: 31,
+        DocumentTypeID: docID,
         LinkID,
         APAR: "Fund Utilization Request",
         VendorID,
@@ -372,7 +384,7 @@ exports.create = async (req, res) => {
         ResponsibilityCenter,
         Total,
         RequestedBy: req.user.employeeID,
-        Status: "Requested",
+        Status: statusValue,
         Active: true,
         CreatedBy: req.user.id,
         CreatedDate: new Date(),
