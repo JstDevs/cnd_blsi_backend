@@ -15,6 +15,7 @@ const ApprovalAuditModel = require('../config/database').ApprovalAudit;
 const { Op } = require('sequelize');
 const generateLinkID = require("../utils/generateID")
 const getLatestApprovalVersion = require('../utils/getLatestApprovalVersion');
+const validateApproval = require('../utils/validateApproval');
 
 exports.save = async (req, res) => {
   const t = await db.sequelize.transaction();
@@ -82,7 +83,7 @@ exports.save = async (req, res) => {
       },
       transaction: t
     });
-    
+
     statusValue = matrixExists ? 'Requested' : 'Posted';
     const approvalVersion = await getLatestApprovalVersion('Budget Transfer');
 
@@ -354,74 +355,67 @@ exports.recover = async (req, res) => {
 };
 
 exports.approveTransaction = async (req, res) => {
-  const rawBody = req.body || {};
+  const { id, ID } = req.body;
+  const txnId = ID || id;
 
-  // Accept multiple possible field names from frontend variations
-  const id = rawBody.id ?? rawBody.ID ?? rawBody.transactionId ?? rawBody.TransactionID ?? rawBody.linkId ?? rawBody.LinkID ?? (rawBody.data && (rawBody.data.id ?? rawBody.data.ID));
-  let approvalProgress = rawBody.approvalProgress ?? rawBody.ApprovalProgress ?? rawBody.approval_progress ?? (rawBody.data && rawBody.data.approvalProgress) ?? rawBody.progress;
-  const varApprovalLink = rawBody.varApprovalLink ?? rawBody.linkId ?? rawBody.linkID ?? rawBody.LinkID ?? rawBody.approvalLink ?? (rawBody.data && rawBody.data.varApprovalLink);
-  const varLinkID = rawBody.varLinkID ?? rawBody.invoiceLink ?? rawBody.invoiceLinkId ?? rawBody.varLinkId ?? (rawBody.data && rawBody.data.varLinkID);
-  const approvalOrder = rawBody.approvalOrder ?? rawBody.SequenceOrder ?? rawBody.sequenceOrder ?? (rawBody.data && rawBody.data.approvalOrder);
-  const numberOfApproverPerSequence = rawBody.numberOfApproverPerSequence ?? rawBody.approvers ?? rawBody.numberOfApprovers ?? (rawBody.data && rawBody.data.numberOfApproverPerSequence);
-  const userEmployeeID = rawBody.userEmployeeID ?? rawBody.EmployeeID ?? rawBody.employeeId ?? (rawBody.data && rawBody.data.userEmployeeID) ?? req.user?.id;
-  const strUser = rawBody.strUser ?? rawBody.createdBy ?? rawBody.userName ?? rawBody.username ?? req.user?.id;
-  const varTransactionApprovalVersion = rawBody.varTransactionApprovalVersion ?? rawBody.approvalVersion ?? rawBody.ApprovalVersion ?? (rawBody.data && rawBody.data.varTransactionApprovalVersion);
-  const varBudgetID = rawBody.varBudgetID ?? rawBody.BudgetID ?? rawBody.budgetId ?? (rawBody.data && rawBody.data.varBudgetID);
-
-  console.info('[budgetTransfer.approveTransaction] raw body:', rawBody);
-  console.info('[budgetTransfer.approveTransaction] normalized payload:', {
-    id,
-    approvalProgress,
-    varBudgetID
-  });
-
-  if (!id) return res.status(400).json({ success: false, error: 'Missing required field: id' });
-
-  // If frontend didn't supply approvalProgress, default to 1
-  if (approvalProgress === undefined || approvalProgress === null) {
-    approvalProgress = 1;
-  }
+  if (!txnId) return res.status(400).json({ success: false, error: 'Missing required field: id' });
 
   const t = await db.sequelize.transaction();
   try {
-    // Determine new status based on approval progress
-    let newStatus = 'Requested';
-    if (numberOfApproverPerSequence) {
-      if (approvalProgress >= numberOfApproverPerSequence) newStatus = 'Posted';
-    } else {
-      if ((approvalProgress || 0) > 0) newStatus = 'Posted';
+    const transaction = await TransactionTableModel.findByPk(txnId, { transaction: t });
+    if (!transaction) throw new Error("Transaction not found");
+
+    if (transaction.Status === 'Posted') {
+      await t.rollback();
+      return res.json({ success: true, message: "Transaction already posted." });
     }
 
-    await TransactionTableModel.update(
-      { ApprovalProgress: approvalProgress, Status: newStatus },
-      { where: { ID: id }, transaction: t }
-    );
+    // 🔹 1. Validate Approval Matrix
+    const validation = await validateApproval({
+      documentTypeID: transaction.DocumentTypeID || 22, // 22 is Budget Transfer
+      approvalVersion: transaction.ApprovalVersion,
+      totalAmount: parseFloat(transaction.Total || 0),
+      transactionLinkID: transaction.LinkID,
+      user: req.user
+    });
 
+    if (!validation.canApprove) {
+      throw new Error(validation.error);
+    }
+
+    const isFinal = validation.isFinal;
+
+    // 🔹 2. Update Transaction Table
+    const updatePayload = {
+      ApprovalProgress: validation.nextSequence || transaction.ApprovalProgress,
+      Status: validation.nextStatus
+    };
+
+    await transaction.update(updatePayload, { transaction: t });
+
+    // 🔹 3. Insert into Approval Audit
     await ApprovalAuditModel.create(
       {
-        LinkID: varApprovalLink,
-        InvoiceLink: varLinkID,
-        PositionorEmployee: 'Employee',
-        PositionorEmployeeID: userEmployeeID,
-        SequenceOrder: approvalOrder,
-        ApprovalOrder: numberOfApproverPerSequence,
+        LinkID: generateLinkID(),
+        InvoiceLink: transaction.LinkID,
+        PositionorEmployee: "Employee",
+        PositionorEmployeeID: req.user.employeeID,
+        SequenceOrder: validation.currentSequence,
+        ApprovalOrder: validation.numberOfApprovers,
         ApprovalDate: new Date(),
         RejectionDate: null,
         Remarks: null,
-        CreatedBy: strUser,
+        CreatedBy: req.user.id,
         CreatedDate: new Date(),
-        ApprovalVersion: varTransactionApprovalVersion
+        ApprovalVersion: transaction.ApprovalVersion
       },
       { transaction: t }
     );
 
     // --- UPDATE Budget Table ONLY IF FINAL APPROVAL ---
-    if (newStatus === 'Posted') {
+    if (isFinal) {
       // Update Budget table: handle transfer between budgets
-      const transaction = await TransactionTableModel.findByPk(id, { transaction: t });
-      if (!transaction) throw new Error(`Transaction ID ${id} not found.`);
-
-      const sourceBudgetID = varBudgetID || transaction.BudgetID;
+      const sourceBudgetID = transaction.BudgetID;
       const targetBudgetID = transaction.TargetID;
       const transferAmount = parseFloat(transaction.Total || 0);
 
@@ -446,7 +440,7 @@ exports.approveTransaction = async (req, res) => {
               Transfer: newTransfer,
               AllotmentBalance: newBalance,
               AppropriationBalance: newBalance,
-              ModifyBy: strUser,
+              ModifyBy: req.user.id,
               ModifyDate: new Date()
             },
             { where: { ID: budgetID }, transaction: t }

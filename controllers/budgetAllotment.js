@@ -14,6 +14,7 @@ const ApprovalAuditModel = require('../config/database').ApprovalAudit;
 const { Op, where } = require('sequelize');
 const generateLinkID = require("../utils/generateID")
 const getLatestApprovalVersion = require('../utils/getLatestApprovalVersion');
+const validateApproval = require('../utils/validateApproval');
 
 exports.save = async (req, res) => {
   const t = await db.sequelize.transaction();
@@ -89,7 +90,7 @@ exports.save = async (req, res) => {
       if (!doc) throw new Error('Document type ID 20 not found.');
 
       invoiceText = `${doc.Prefix}-${String(doc.CurrentNumber).padStart(5, '0')}-${doc.Suffix}`;
-      
+
       let statusValue = '';
       const matrixExists = await db.ApprovalMatrix.findOne({
         where: {
@@ -191,12 +192,12 @@ exports.budgetList = async (req, res) => {
     const budgets = await BudgetModel.findAll({
       where: whereClause,
       include: [
-        { model: FiscalYearModel,       as: 'FiscalYear',       required: false },
-        { model: DepartmentModel,       as: 'Department',       required: false },
-        { model: SubDepartmentModel,    as: 'SubDepartment',    required: false },
-        { model: ChartOfAccountsModel,  as: 'ChartofAccounts',  required: false },
-        { model: FundModel,             as: 'Funds',            required: false },
-        { model: ProjectModel,          as: 'Project',          required: false }
+        { model: FiscalYearModel, as: 'FiscalYear', required: false },
+        { model: DepartmentModel, as: 'Department', required: false },
+        { model: SubDepartmentModel, as: 'SubDepartment', required: false },
+        { model: ChartOfAccountsModel, as: 'ChartofAccounts', required: false },
+        { model: FundModel, as: 'Funds', required: false },
+        { model: ProjectModel, as: 'Project', required: false }
       ],
       order: [['TotalAmount', 'ASC']]
     });
@@ -371,66 +372,66 @@ exports.recover = async (req, res) => {
     res.status(500).json({ error: err.message });
   }
 };
-
 exports.approveTransaction = async (req, res) => {
-  const {
-    id,
-    ID,
-    approvalProgress,
-    varApprovalLink,
-    varLinkID,
-    approvalOrder,
-    numberOfApproverPerSequence,
-    userEmployeeID,
-    strUser,
-    varTransactionApprovalVersion,
-    varBudgetID
-  } = req.body;
-
-  // Accept either `id` or `ID` from the frontend
+  const { id, ID } = req.body;
   const txnId = ID || id;
-  console.log('[BudgetAllotment.approveTransaction] Called with:', { txnId, varBudgetID, approvalProgress });
 
   const t = await db.sequelize.transaction();
   try {
-    // Determine new status based on approval progress and expected approvers
-    let newStatus = 'Requested';
-    if (numberOfApproverPerSequence) {
-      if (approvalProgress >= numberOfApproverPerSequence) newStatus = 'Posted';
-    } else {
-      // Fallback if numberOfApproverPerSequence is not provided: assume single-approver or already posted logic
-      if ((approvalProgress || 0) > 0) newStatus = 'Posted';
+    const transaction = await TransactionTableModel.findByPk(txnId, { transaction: t });
+    if (!transaction) throw new Error("Transaction not found");
+
+    if (transaction.Status === 'Posted') {
+      await t.rollback();
+      return res.json({ success: true, message: "Transaction already posted." });
     }
 
-    // Update approval progress and Status
-    await TransactionTableModel.update(
-      { ApprovalProgress: approvalProgress, Status: newStatus },
-      { where: { ID: txnId }, transaction: t }
-    );
+    // 🔹 1. Validate Approval Matrix
+    const validation = await validateApproval({
+      documentTypeID: transaction.DocumentTypeID || 20, // 20 is Allotment
+      approvalVersion: transaction.ApprovalVersion,
+      totalAmount: parseFloat(transaction.Total || 0),
+      transactionLinkID: transaction.LinkID,
+      user: req.user
+    });
 
+    if (!validation.canApprove) {
+      throw new Error(validation.error);
+    }
+
+    const isFinal = validation.isFinal;
+
+    // 🔹 2. Update Transaction Table
+    const updatePayload = {
+      ApprovalProgress: validation.nextSequence || transaction.ApprovalProgress,
+      Status: validation.nextStatus
+    };
+
+    await transaction.update(updatePayload, { transaction: t });
+
+    // 🔹 3. Insert into Approval Audit
     await ApprovalAuditModel.create(
       {
-        LinkID: varApprovalLink,
-        InvoiceLink: varLinkID,
-        PositionorEmployee: 'Employee',
-        PositionorEmployeeID: userEmployeeID,
-        SequenceOrder: approvalOrder,
-        ApprovalOrder: numberOfApproverPerSequence,
+        LinkID: generateLinkID(),
+        InvoiceLink: transaction.LinkID,
+        PositionorEmployee: "Employee",
+        PositionorEmployeeID: req.user.employeeID,
+        SequenceOrder: validation.currentSequence,
+        ApprovalOrder: validation.numberOfApprovers,
         ApprovalDate: new Date(),
         RejectionDate: null,
         Remarks: null,
-        CreatedBy: strUser,
+        CreatedBy: req.user.id,
         CreatedDate: new Date(),
-        ApprovalVersion: varTransactionApprovalVersion
+        ApprovalVersion: transaction.ApprovalVersion
       },
       { transaction: t }
     );
 
     // --- UPDATE Budget Table ONLY IF FINAL APPROVAL ---
-    if (newStatus === 'Posted') {
+    if (isFinal) {
       // Get the transaction to retrieve BudgetID and Amount
-      const transaction = await TransactionTableModel.findByPk(txnId, { transaction: t });
-      const bID = varBudgetID || transaction?.BudgetID;
+      const bID = transaction?.BudgetID;
       const allotmentAmount = parseFloat(transaction?.Total || 0);
 
       if (bID) {
@@ -447,7 +448,7 @@ exports.approveTransaction = async (req, res) => {
             {
               Released: newReleased,
               AllotmentBalance: newAllotmentBalance,
-              ModifyBy: strUser,
+              ModifyBy: req.user.id,
               ModifyDate: new Date()
             },
             { where: { ID: bID }, transaction: t }
