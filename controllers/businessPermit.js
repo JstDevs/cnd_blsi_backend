@@ -35,6 +35,20 @@ exports.create = async (req, res) => {
     try {
         const data = req.body;
 
+        // const docID = 19;
+        // let statusValue = '';
+        // const matrixExists = await db.ApprovalMatrix.findOne({
+        // where: {
+        //     DocumentTypeID: docID,
+        //     Active: 1,
+        // },
+        // transaction: t
+        // });
+        
+        // statusValue = matrixExists ? 'Requested' : 'Posted';
+
+        // req.body.Status = statusValue;
+
         // Logic to handle attachments if they are uploaded separately or handled here
         // For now, assuming data comes in as a JSON body (attachments might be URLs or handled via multer)
 
