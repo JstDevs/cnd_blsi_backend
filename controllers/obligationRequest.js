@@ -855,11 +855,10 @@ exports.approveTransaction = async (req, res) => {
     // 🔹 6. Commit
     await t.commit();
     return res.json({ success: true, message: "Data saved successfully." });
-
   } catch (err) {
-    await t.rollback();
-    console.error("Error approving transaction:", err);
-    return res.status(500).json({ success: false, message: err.message });
+    if (t) await t.rollback();
+    console.error('[OBR Approve] Error:', err);
+    return res.status(500).json({ success: false, error: err.message });
   }
 };
 

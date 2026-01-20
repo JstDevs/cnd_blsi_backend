@@ -440,7 +440,7 @@ exports.approveTransaction = async (req, res) => {
     await t.commit();
     res.json({ success: true, message: "Data saved successfully." });
   } catch (err) {
-    await t.rollback();
+    if (t) await t.rollback();
     console.error('[budgetSupplemental.approveTransaction] Error:', err);
     res.status(500).json({ success: false, error: err.message });
   }

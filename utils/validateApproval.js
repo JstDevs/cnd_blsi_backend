@@ -6,16 +6,16 @@ const { Op } = require('sequelize');
  * Returns information about the next status and sequence level.
  */
 async function validateApproval({ documentTypeID, approvalVersion, totalAmount, transactionLinkID, user }) {
-    try {
-        const { employeeID, departmentID, userAccessIDs } = user;
+    if (!user) throw new Error('User information is required for approval validation.');
 
-        // 1. Fetch user position if needed
-        const employee = await db.Employee.findByPk(employeeID);
+    try {
+        const { employeeID, departmentID, userAccessIDs = [] } = user;
+
+        // 1. Fetch user position
+        const employee = await db.employee.findByPk(employeeID);
         const positionID = employee?.PositionID;
 
         // 2. Fetch the current sequence level of the transaction from Audit logs
-        // We count how many unique sequence levels have been FULLY satisfied or what is the max sequence level reached.
-        // However, the standard logic is: check existing approvals for this specific version and link.
         const lastAudit = await db.ApprovalAudit.findOne({
             where: { InvoiceLink: transactionLinkID },
             order: [['SequenceOrder', 'DESC']],
@@ -24,7 +24,6 @@ async function validateApproval({ documentTypeID, approvalVersion, totalAmount, 
         const currentSequence = lastAudit ? lastAudit.SequenceOrder : 0;
 
         // 3. Fetch ALL relevant matrix rules for this document type and version, filtered by amount
-        // Order by SequenceLevel ASC
         const matrixRules = await db.ApprovalMatrix.findAll({
             where: {
                 DocumentTypeID: documentTypeID,
@@ -51,24 +50,29 @@ async function validateApproval({ documentTypeID, approvalVersion, totalAmount, 
                     ]
                 },
                 required: true
-            }],
-            order: [['SequenceLevel', 'ASC']]
+            }]
+        });
+
+        // Sort rules numerically (important because SequenceLevel is a string like "1 - First")
+        matrixRules.sort((a, b) => {
+            const levelA = parseInt(a.SequenceLevel) || 0;
+            const levelB = parseInt(b.SequenceLevel) || 0;
+            return levelA - levelB;
         });
 
         if (matrixRules.length === 0) {
-            // If no rules apply for this amount/doc, it's auto-postable or error?
-            // Usually means it can be posted immediately.
-            return { canApprove: true, isFinal: true, nextStatus: 'Posted', currentSequence: 0 };
+            return { canApprove: true, isFinal: true, nextStatus: 'Posted', nextSequence: 0, currentSequence: 0, numberOfApprovers: 0 };
         }
 
         // Identify the next sequence level the user needs to approve
-        // Logic: Look for the first sequence level in matrixRules that is > currentSequence
-        const nextRule = matrixRules.find(r => r.SequenceLevel > currentSequence);
+        // NOTE: SequenceLevel in Matrix is a STRING (e.g., "1 - First"), must parse to number
+        const nextRule = matrixRules.find(r => parseInt(r.SequenceLevel) > currentSequence);
 
         if (!nextRule) {
-            // All sequences matched by amount are already cleared
             return { canApprove: false, error: 'Transaction is already fully approved for your amount bracket.' };
         }
+
+        const nextSequenceInt = parseInt(nextRule.SequenceLevel) || 1;
 
         // 4. Validate if current user is one of the authorized approvers for this rule
         const isAuthorized = nextRule.Approvers.some(appr => {
@@ -88,11 +92,11 @@ async function validateApproval({ documentTypeID, approvalVersion, totalAmount, 
             };
         }
 
-        // 5. Check if user already approved THIS specific sequence level for THIS transaction
+        // 5. Check if user already approved THIS specific sequence level
         const alreadyApproved = await db.ApprovalAudit.findOne({
             where: {
                 InvoiceLink: transactionLinkID,
-                SequenceOrder: nextRule.SequenceLevel,
+                SequenceOrder: nextSequenceInt,
                 PositionorEmployeeID: employeeID
             }
         });
@@ -101,16 +105,16 @@ async function validateApproval({ documentTypeID, approvalVersion, totalAmount, 
             return { canApprove: false, error: 'You have already approved this sequence level.' };
         }
 
-        // 6. Determine if this approval will complete the sequence level (Majority vs All)
+        // 6. Determine if level is satisfied
         const approvalsInCurrentLevel = await db.ApprovalAudit.count({
             where: {
                 InvoiceLink: transactionLinkID,
-                SequenceOrder: nextRule.SequenceLevel
+                SequenceOrder: nextSequenceInt
             }
         });
 
         const totalApproversNeeded = nextRule.NumberofApprover || 1;
-        const ruleType = nextRule.AllorMajority; // "All" or "Majority"
+        const ruleType = nextRule.AllorMajority;
 
         let isSequenceSatisfied = false;
         const newApprovalCount = approvalsInCurrentLevel + 1;
@@ -118,25 +122,24 @@ async function validateApproval({ documentTypeID, approvalVersion, totalAmount, 
         if (ruleType === 'Majority') {
             isSequenceSatisfied = newApprovalCount >= Math.ceil((totalApproversNeeded + 1) / 2);
         } else {
-            // Default to "All" or single approver
             isSequenceSatisfied = newApprovalCount >= totalApproversNeeded;
         }
 
-        // 7. Determine if this is the final sequence level
-        const remainingRules = matrixRules.filter(r => r.SequenceLevel > nextRule.SequenceLevel);
+        // 7. Determine finality
+        const remainingRules = matrixRules.filter(r => parseInt(r.SequenceLevel) > nextSequenceInt);
         const isFinal = isSequenceSatisfied && remainingRules.length === 0;
 
         return {
             canApprove: true,
             isFinal: isFinal,
-            nextStatus: isFinal ? 'Posted' : (isSequenceSatisfied ? 'Requested' : 'Requested'), // Status usually stays Requested until Posted
-            nextSequence: isSequenceSatisfied ? nextRule.SequenceLevel : currentSequence,
-            currentSequence: nextRule.SequenceLevel,
+            nextStatus: isFinal ? 'Posted' : 'Requested',
+            nextSequence: isSequenceSatisfied ? nextSequenceInt : currentSequence,
+            currentSequence: nextSequenceInt,
             numberOfApprovers: totalApproversNeeded
         };
 
     } catch (error) {
-        console.error('validateApproval Error:', error);
+        console.error('[validateApproval] Error:', error);
         throw error;
     }
 }
