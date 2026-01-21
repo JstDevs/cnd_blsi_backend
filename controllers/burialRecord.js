@@ -67,6 +67,59 @@ exports.saveBurialTransaction = async (req, res) => {
     const refID = IsNew ? generateLinkID() : data.LinkID;
     const latestapprovalversion = await getLatestApprovalVersion('Burial Receipt');
 
+    if (IsNew && !data.CustomerID && data.CustomerName) {
+      try {
+        console.log('Creating new Payor:', data.CustomerName);
+        const newCustomer = await Customer.create({
+            Name: data.CustomerName,
+            Active: true,
+            CreatedBy: req.user.id,
+            CreatedDate: new Date(),
+            ModifyBy: req.user.id,
+            ModifyDate: new Date()
+        }, { transaction: t });
+        data.CustomerID = newCustomer.ID;
+      } catch (err) {
+        console.error('Error creating new Payor:', err);
+      }
+    }
+
+    // ---------------- Create New Deceased if needed ----------------
+    if (IsNew && !data.DeceasedCustomerID && data.DeceasedCustomerName) {
+      try {
+         console.log('Creating New Deceased:', data.DeceasedCustomerName);
+         const newDeceased = await Customer.create({
+            Name: data.DeceasedCustomerName,
+            Active: true,
+            CreatedBy: req.user.id,
+            CreatedDate: new Date(),
+            ModifyBy: req.user.id,
+            ModifyDate: new Date()
+         }, { transaction: t });
+         data.DeceasedCustomerID = newDeceased.ID; // Update ID for the receipt
+      } catch (err) {
+         console.error('Error creating deceased:', err);
+      }
+    }
+
+        // ---------------- Create New Deceased if needed ----------------
+    if (IsNew && !data.DeceasedCustomerID && data.DeceasedCustomerName) {
+      try {
+         console.log('Creating New Deceased:', data.DeceasedCustomerName);
+         const newDeceased = await Customer.create({
+            Name: data.DeceasedCustomerName,
+            Active: true,
+            CreatedBy: req.user.id,
+            CreatedDate: new Date(),
+            ModifyBy: req.user.id,
+            ModifyDate: new Date()
+         }, { transaction: t });
+         data.DeceasedCustomerID = newDeceased.ID; // Update ID for the receipt
+      } catch (err) {
+         console.error('Error creating deceased:', err);
+      }
+    }
+    
     if (IsNew) {
       // Create Transaction Table record
       await TransactionTable.create({
