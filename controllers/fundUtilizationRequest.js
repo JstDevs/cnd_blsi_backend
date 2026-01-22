@@ -102,8 +102,8 @@ exports.save = async (req, res) => {
     if (IsNew && data.PayeeType === 'New') {
       const customer = await CustomerModel.create({
         Name: data.Payee,
-        StreetAddress: data.StreetAddress,
-        TIN: data.TIN,
+        StreetAddress: data.Address || 'N/A',
+        TIN: 0,
         ContactPerson: 'None',
         Type: 'Individual',
         Active: true,
@@ -112,6 +112,70 @@ exports.save = async (req, res) => {
       }, { transaction: t });
 
       CustomerID = customer.ID;
+    }
+
+    // ✅ Insert Employee if needed
+    if (IsNew && data.PayeeType === 'NewEmployee') {
+      // Find or create "Unassigned" department
+      let unassignedDept = await DepartmentModel.findOne({
+        where: { Name: 'Unassigned' },
+        transaction: t
+      });
+
+      if (!unassignedDept) {
+        unassignedDept = await DepartmentModel.create({
+          Name: 'Unassigned',
+          Description: 'Temporary department for employees pending complete details',
+          Active: true,
+          CreatedBy: req.user.id,
+          CreatedDate: new Date()
+        }, { transaction: t });
+      }
+
+      // Split name into FirstName and LastName
+      let firstName = 'New Employee';
+      let lastName = '';
+
+      if (data.Payee && data.Payee.trim()) {
+        const nameParts = data.Payee.trim().split(' ');
+        firstName = nameParts[0];
+        lastName = nameParts.slice(1).join(' ');
+      }
+
+      const newEmployee = await EmployeeModel.create({
+        FirstName: firstName,
+        LastName: lastName,
+        MiddleName: '',
+        DepartmentID: unassignedDept.ID,
+        Position: 'TBD',
+        StreetAddress: data.Address || 'N/A',
+        Active: true,
+        CreatedBy: req.user.id,
+        CreatedDate: new Date(),
+        ModifyBy: req.user.id,
+        ModifyDate: new Date(),
+        EmploymentDate: new Date(),
+      }, { transaction: t });
+
+      EmployeeID = newEmployee.ID;
+    }
+
+    // ✅ Insert Vendor if needed
+    if (IsNew && data.PayeeType === 'NewVendor') {
+      const newVendor = await VendorModel.create({
+        Name: data.Payee,
+        StreetAddress: data.Address || 'N/A',
+        TIN: 'TBD',
+        ContactPerson: 'N/A',
+        BusinessType: 'TBD',
+        Active: true,
+        CreatedBy: req.user.id,
+        CreatedDate: new Date(),
+        ModifyBy: req.user.id,
+        ModifyDate: new Date()
+      }, { transaction: t });
+
+      VendorID = newVendor.ID;
     }
 
     VendorID = Number(VendorID) || 0;
@@ -127,7 +191,7 @@ exports.save = async (req, res) => {
       },
       transaction: t
     });
-    
+
     statusValue = matrixExists ? 'Requested' : 'Posted';
 
     const furData = {
