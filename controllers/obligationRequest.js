@@ -56,6 +56,7 @@ exports.create = async (req, res) => {
 
     let customerID = CustomerID;
 
+    // Create new Individual (Customer)
     if (PayeeType == 'New') {
       const newCustomer = await Customer.create({
         Name: Payee,
@@ -70,6 +71,73 @@ exports.create = async (req, res) => {
 
       customerID = newCustomer.ID;
     }
+
+    // Create new Employee with minimal details
+    if (PayeeType == 'NewEmployee') {
+      console.log('Creating New Employee - Payee name received:', Payee);
+
+      // Find or create "Unassigned" department
+      let unassignedDept = await DepartmentModel.findOne({
+        where: { Name: 'Unassigned' },
+        transaction: t
+      });
+
+      if (!unassignedDept) {
+        unassignedDept = await DepartmentModel.create({
+          Name: 'Unassigned',
+          Description: 'Temporary department for employees pending complete details',
+          Active: true,
+          CreatedBy: req.user.id,
+          CreatedDate: new Date()
+        }, { transaction: t });
+      }
+
+      // Split name into FirstName and LastName
+      let firstName = 'New Employee';
+      let lastName = '';
+
+      if (Payee && Payee.trim()) {
+        const nameParts = Payee.trim().split(' ');
+        firstName = nameParts[0];
+        lastName = nameParts.slice(1).join(' ');
+      }
+
+      const newEmployee = await EmployeeModel.create({
+        FirstName: firstName,
+        LastName: lastName,
+        MiddleName: '',
+        DepartmentID: unassignedDept.ID,
+        Position: 'TBD',
+        StreetAddress: Address || 'N/A',
+        Active: true,
+        CreatedBy: req.user.id,
+        CreatedDate: new Date(),
+        ModifyBy: req.user.id,
+        ModifyDate: new Date(),
+        EmploymentDate: new Date(), // Placeholder
+      }, { transaction: t });
+
+      EmployeeID = newEmployee.ID;
+    }
+
+    // Create new Vendor with minimal details
+    if (PayeeType == 'NewVendor') {
+      const newVendor = await VendorModel.create({
+        Name: Payee,
+        StreetAddress: Address || 'N/A',
+        TIN: 'TBD',
+        ContactPerson: 'N/A',
+        BusinessType: 'TBD',
+        Active: true,
+        CreatedBy: req.user.id,
+        CreatedDate: new Date(),
+        ModifyBy: req.user.id,
+        ModifyDate: new Date()
+      }, { transaction: t });
+
+      VendorID = newVendor.ID;
+    }
+
     const docID = 13;
     let statusValue = '';
     const matrixExists = await db.ApprovalMatrix.findOne({
