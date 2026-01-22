@@ -162,6 +162,7 @@ exports.save = async (req, res) => {
 
     // ✅ Insert Vendor if needed
     if (IsNew && data.PayeeType === 'NewVendor') {
+      console.log('FURS - Creating New Vendor - Name received:', data.Payee);
       const newVendor = await VendorModel.create({
         Name: data.Payee,
         StreetAddress: data.Address || 'N/A',

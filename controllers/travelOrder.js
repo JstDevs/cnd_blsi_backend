@@ -98,7 +98,7 @@ exports.create = async (req, res) => {
       },
       transaction: t
     });
-    
+
     statusValue = matrixExists ? 'Requested' : 'Posted';
     const latestApprovalVersion = await getLatestApprovalVersion('Allotment Release Order');
 
@@ -506,31 +506,42 @@ exports.delete = async (req, res) => {
 
     const linkID = travelOrderItem.LinkID;
 
-    // Check if the travel order is in a deletable state
+    // Find the transaction record
     const transactionRecord = await TransactionTableModel.findOne({ where: { LinkID: linkID }, transaction: t });
-    if (!transactionRecord || transactionRecord.Status !== 'Rejected') {
+    if (!transactionRecord) {
       await t.rollback();
-      return res.status(400).json({ message: 'Only Rejected travel orders can be deleted.' });
+      return res.status(404).json({ message: 'Transaction record not found' });
     }
 
-    // Delete all associated data using LinkID
-    await Promise.all([
-      TravelersModel.destroy({ where: { LinkID: linkID }, transaction: t }),
-      TravelPaymentsModel.destroy({ where: { LinkID: linkID }, transaction: t }),
-      TravelDocumentsModel.destroy({ where: { LinkID: linkID }, transaction: t }),
-      TransactionTableModel.destroy({ where: { LinkID: linkID }, transaction: t }),
-      AttachmentModel.destroy({ where: { LinkID: linkID }, transaction: t }),
-    ]);
+    if (transactionRecord.Status !== 'Rejected') {
+      await t.rollback();
+      return res.status(400).json({ message: 'Only Rejected travel orders can be voided.' });
+    }
 
-    // Delete the main travel order
-    await travelOrder.destroy({ where: { ID: req.params.id }, transaction: t });
+    // Update status to Void instead of deleting
+    await transactionRecord.update({
+      Status: 'Void',
+      ModifyBy: req.user.id,
+      ModifyDate: new Date()
+    }, { transaction: t });
+
+    // Log the void action in ApprovalAudit
+    const ApprovalAuditModel = require('../config/database').ApprovalAudit;
+    await ApprovalAuditModel.create({
+      LinkID: generateLinkID(),
+      InvoiceLink: linkID,
+      CreatedDate: new Date(),
+      Remarks: 'Travel Order Voided',
+      CreatedBy: req.user.id,
+      ApprovalVersion: transactionRecord.ApprovalVersion
+    }, { transaction: t });
 
     await t.commit();
-    res.json({ message: "TravelOrder and all associated data deleted successfully" });
+    res.json({ success: true, message: "Travel Order voided successfully" });
 
   } catch (err) {
     await t.rollback();
-    console.error('❌ Error deleting travel order:', err);
+    console.error('❌ Error voiding travel order:', err);
     res.status(500).json({ error: err.message });
   }
 };
