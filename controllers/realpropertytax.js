@@ -92,6 +92,27 @@ exports.save = async (req, res) => {
 
     statusValue = matrixExists ? 'Requested' : 'Posted';
 
+    // ✅ Create new Customer if Owner doesn't exist (Manual Input Support)
+    const CustomerModel = require('../config/database').Customer;
+    if (IsNew && (!data.ownerId || data.ownerId === '') && data.CustomerName) {
+      try {
+        console.log('Creating New Owner/Customer (RPT):', data.CustomerName);
+        const newCustomer = await CustomerModel.create({
+          Name: data.CustomerName,
+          Active: true,
+          CreatedBy: req.user.id,
+          CreatedDate: new Date(),
+          ModifyBy: req.user.id,
+          ModifyDate: new Date()
+        }, { transaction: t });
+        data.ownerId = newCustomer.ID;
+        console.log('New Customer created with ID:', newCustomer.ID);
+      } catch (err) {
+        console.error('Error creating new customer:', err);
+        throw new Error('Failed to create new customer: ' + err.message);
+      }
+    }
+
     if (IsNew) {
       // Insert into TransactionTable
       await TransactionTable.create({
