@@ -149,9 +149,6 @@ exports.create = async (req, res) => {
       transaction: t
     });
 
-    // statusValue = matrixExists ? 'Requested' : 'Posted';
-    // const latestApprovalVersion = await getLatestApprovalVersion('Obligation Request');
-
     const isAutoPost = !matrixExists;
     statusValue = isAutoPost ? 'Posted' : 'Requested';
 
@@ -168,6 +165,7 @@ exports.create = async (req, res) => {
       autoInvoiceNumber = `${FundsID}-${currentYYMM}-${currentNumber}`;
     }
 
+    const latestApprovalVersion = await getLatestApprovalVersion('Obligation Request');
 
     const newRecord = await TransactionTable.create({
       DocumentTypeID: docID,
@@ -272,7 +270,7 @@ exports.create = async (req, res) => {
         NormalBalance: account.ChartofAccounts?.NormalBalance,
         ResponsibilityCenter: item.ResponsibilityCenter,
         Vatable: item.Vatable
-      });
+      }, { transaction: t });
 
     }
 
@@ -281,8 +279,15 @@ exports.create = async (req, res) => {
       const budget = await Budget.findByPk(item.ChargeAccountID, { transaction: t });
       if (budget) {
         const subtotal = parseFloat(item.Sub_Total || item.subtotal || 0);
-        const newPreEncumbrance = parseFloat(budget.PreEncumbrance || 0) + subtotal;
-        await budget.update({ PreEncumbrance: newPreEncumbrance }, { transaction: t });
+        if (isAutoPost) {
+          // Direct to Encumbrance if auto-posted
+          const newEncumbrance = parseFloat(budget.Encumbrance || 0) + subtotal;
+          await budget.update({ Encumbrance: newEncumbrance }, { transaction: t });
+        } else {
+          // Regular requested status
+          const newPreEncumbrance = parseFloat(budget.PreEncumbrance || 0) + subtotal;
+          await budget.update({ PreEncumbrance: newPreEncumbrance }, { transaction: t });
+        }
       }
     }
 
@@ -296,6 +301,13 @@ exports.create = async (req, res) => {
       }));
 
       await Attachment.bulkCreate(blobAttachments, { transaction: t });
+    }
+
+    if (isAutoPost && currentNumber) {
+      await DocumentTypeModel.update(
+        { CurrentNumber: currentNumber },
+        { where: { ID: 13 }, transaction: t }
+      );
     }
 
     await t.commit();
