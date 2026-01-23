@@ -193,14 +193,28 @@ exports.save = async (req, res) => {
       transaction: t
     });
 
-    statusValue = matrixExists ? 'Requested' : 'Posted';
+    const isAutoPost = !matrixExists;
+    statusValue = isAutoPost ? 'Posted' : 'Requested';
+
+    let autoInvoiceNumber = data.InvoiceNumber;
+    let currentNumber = null;
+
+    if (isAutoPost) {
+      const now = new Date();
+      const year = now.getFullYear();
+      const month = String(now.getMonth() + 1).padStart(2, "0");
+      const currentYYMM = `${year}-${month}`;
+
+      currentNumber = await getCurrentNumber(t);
+      autoInvoiceNumber = `${data.FundsID}-${currentYYMM}-${currentNumber}`;
+    }
 
     const furData = {
       DocumentTypeID: docID,
       LinkID: refID,
       APAR: 'Fund Utilization Request',
       VendorID: VendorID,
-      InvoiceNumber: data.InvoiceNumber,
+      InvoiceNumber: autoInvoiceNumber,
       InvoiceDate: data.InvoiceDate,
       ResponsibilityCenter: data.ResponsibilityCenter,
       Total: data.Total,
@@ -307,7 +321,7 @@ exports.save = async (req, res) => {
         Remarks: itm.Remarks,
         FPP: itm.FPP,
         Discounted: itm.Discounted,
-        InvoiceNumber: data.InvoiceNumber,
+        InvoiceNumber: autoInvoiceNumber,
         NormalBalance: account.ChartofAccounts?.NormalBalance,
         ResponsibilityCenter: itm.ResponsibilityCenter,
         Vatable: itm.Vatable
@@ -331,16 +345,24 @@ exports.save = async (req, res) => {
 
       for (const [ChargeAccountID, subTotal] of Object.entries(byChargeAccount)) {
         const budget = await BudgetModel.findByPk(ChargeAccountID, {
-          attributes: ["ID", "PreEncumbrance"],
+          attributes: ["ID", "PreEncumbrance", "Encumbrance"],
           transaction: t
         });
         if (!budget) continue; // Guard against orphan IDs
-        // console.error('Budget PreEncumbrance: '+budget.PreEncumbrance);
-        // console.error('Budget Subtotal: '+subTotal);
-        await budget.update(
-          { PreEncumbrance: Number(budget.PreEncumbrance) + Number(subTotal) },
-          { transaction: t }
-        );
+
+        if (isAutoPost) {
+          // Direct to Encumbrance if auto-posted
+          await budget.update(
+            { Encumbrance: Number(budget.Encumbrance || 0) + Number(subTotal) },
+            { transaction: t }
+          );
+        } else {
+          // Regular requested status
+          await budget.update(
+            { PreEncumbrance: Number(budget.PreEncumbrance) + Number(subTotal) },
+            { transaction: t }
+          );
+        }
       }
     }
 
@@ -366,6 +388,13 @@ exports.save = async (req, res) => {
         DataImage: `${req.uploadPath}/${file.filename}`
       }));
       await AttachmentModel.bulkCreate(newAttachments, { transaction: t });
+    }
+
+    if (isAutoPost && currentNumber) {
+      await DocumentTypeModel.update(
+        { CurrentNumber: currentNumber },
+        { where: { ID: 31 }, transaction: t }
+      );
     }
 
     await t.commit();
