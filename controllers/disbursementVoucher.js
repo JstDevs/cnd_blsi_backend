@@ -336,14 +336,59 @@ exports.save = async (req, res) => {
       transaction: t
     });
 
-    statusValue = matrixExists ? 'Requested' : 'Posted';
+    const isAutoPost = !matrixExists;
+    statusValue = isAutoPost ? 'Posted' : 'Requested';
+
+    let newInvoiceNumber = data.InvoiceNumber;
+    let currentNumber = null;
+
+    if (isAutoPost) {
+      // 1. Fetch Fund to get Code
+      const fund = await FundsModel.findByPk(FundsID, { transaction: t });
+      const fundCode = fund ? fund.Code : '000';
+
+      // 2. Generate new invoice number
+      const docType = await DocumentTypeModel.findOne({ where: { ID: 14 }, transaction: t });
+      currentNumber = parseInt(docType.CurrentNumber || 0) + 1;
+      const currentYYMM = new Date().toISOString().slice(0, 7).replace('-', '');
+      newInvoiceNumber = `${fundCode}-${currentYYMM}-${currentNumber.toString().padStart(4, '0')}`;
+
+      // 3. Update Budget
+      const chargeAccountSums = {};
+      const items = data.Items || [];
+      for (const item of items) {
+        const acctId = item.ChargeAccountID;
+        const subtotal = parseFloat(item.subtotal || 0);
+        if (subtotal > 0) {
+          chargeAccountSums[acctId] = (chargeAccountSums[acctId] || 0) + subtotal;
+        }
+      }
+
+      for (const acctId of Object.keys(chargeAccountSums)) {
+        const budget = await BudgetModel.findOne({ where: { ID: acctId }, transaction: t });
+        const requiredAmount = chargeAccountSums[acctId];
+
+        if (budget) {
+          await budget.update({
+            Encumbrance: parseFloat(budget.Encumbrance || 0) - requiredAmount,
+            AllotmentBalance: parseFloat(budget.AllotmentBalance || 0) - requiredAmount,
+            Charges: parseFloat(budget.Charges || 0) + requiredAmount
+          }, { transaction: t });
+        }
+      }
+
+      // 4. Update Document Type Number
+      if (docType) {
+        await docType.update({ CurrentNumber: currentNumber }, { transaction: t });
+      }
+    }
 
     let communityData = {
       DocumentTypeID: documentTypeID,
       LinkID: refID,
       APAR: 'Disbursement Voucher',
       VendorID: VendorID,
-      InvoiceNumber: data.InvoiceNumber,
+      InvoiceNumber: newInvoiceNumber,
       InvoiceDate: data.InvoiceDate,
       BillingDueDate: data.BillingDueDate,
       Total: data.Total,
@@ -444,7 +489,7 @@ exports.save = async (req, res) => {
         Remarks: item.Remarks,
         FPP: item.FPP,
         Discounted: item.Discounted,
-        InvoiceNumber: data.InvoiceNumber
+        InvoiceNumber: newInvoiceNumber
       }, { transaction: t });
     }
 
