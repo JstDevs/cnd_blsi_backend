@@ -5,12 +5,17 @@ DROP PROCEDURE IF EXISTS SP_GeneralLedger $$
 CREATE PROCEDURE SP_GeneralLedger (
     IN p_accountCode VARCHAR(50),
     IN p_fundID VARCHAR(50),
-    IN p_cutoff VARCHAR(50)
+    IN p_cutoff VARCHAR(50),
+    IN p_linkID VARCHAR(50) -- Added LinkID filter
 )
 BEGIN
     -- Standardize dash-less match
     SET @cleanMatch = REPLACE(p_accountCode, '-', '');
     IF @cleanMatch = '' THEN SET @cleanMatch = '%'; END IF;
+    
+    -- Handle optional LinkID
+    SET @targetLinkID = p_linkID;
+    IF @targetLinkID = '' OR @targetLinkID IS NULL THEN SET @targetLinkID = '%'; END IF;
 
     SELECT 
         tbl.id,
@@ -57,6 +62,7 @@ BEGIN
           AND trt.Status IN ('Posted', 'approved', 'Approved')
           AND (REPLACE(jev.AccountCode, '-', '') LIKE @cleanMatch OR p_accountCode = '%')
           AND (CONCAT(trt.FundsID, '') LIKE p_fundID OR p_fundID = '%')
+          AND (CONCAT(trt.LinkID, '') LIKE @targetLinkID)
           AND DATE(jev.CreatedDate) <= DATE(p_cutoff)
 
         UNION ALL
@@ -86,6 +92,7 @@ BEGIN
           AND trt.Status IN ('Posted', 'approved', 'Approved')
           AND (REPLACE(coa.AccountCode, '-', '') LIKE @cleanMatch OR p_accountCode = '%')
           AND (CONCAT(trt.FundsID, '') LIKE p_fundID OR p_fundID = '%')
+          AND (CONCAT(trt.LinkID, '') LIKE @targetLinkID)
           AND DATE(trt.InvoiceDate) <= DATE(p_cutoff)
 
         UNION ALL
@@ -109,10 +116,11 @@ BEGIN
             '' AS municipality
         FROM transactiontable trt
         LEFT JOIN funds fnd ON fnd.ID = trt.FundsID
-        WHERE (trt.APAR LIKE '%Burial Receipt%' OR trt.APAR LIKE '%Marriage Receipt%' OR trt.DocumentTypeID IN (18, 19))
+        WHERE (trt.DocumentTypeID IN (18, 19))
           AND trt.Status IN ('Posted', 'Approved', 'approved')
           AND ('10101010' LIKE @cleanMatch OR p_accountCode = '%')
           AND (CONCAT(trt.FundsID, '') LIKE p_fundID OR p_fundID = '%')
+          AND (CONCAT(trt.LinkID, '') LIKE @targetLinkID)
           AND DATE(trt.InvoiceDate) <= DATE(p_cutoff)
 
         UNION ALL
@@ -136,10 +144,11 @@ BEGIN
             '' AS municipality
         FROM transactiontable trt
         LEFT JOIN funds fnd ON fnd.ID = trt.FundsID
-        WHERE (trt.APAR LIKE '%Burial Receipt%' OR trt.APAR LIKE '%Marriage Receipt%' OR trt.DocumentTypeID IN (18, 19))
+        WHERE (trt.DocumentTypeID IN (18, 19))
           AND trt.Status IN ('Posted', 'Approved', 'approved')
           AND ('10101020' LIKE @cleanMatch OR p_accountCode = '%')
           AND (CONCAT(trt.FundsID, '') LIKE p_fundID OR p_fundID = '%')
+          AND (CONCAT(trt.LinkID, '') LIKE @targetLinkID)
           AND DATE(trt.InvoiceDate) <= DATE(p_cutoff)
 
     ) AS tbl

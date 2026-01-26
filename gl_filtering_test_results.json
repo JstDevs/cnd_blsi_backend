@@ -1,0 +1,16 @@
+{
+  "filtered_count": 2,
+  "all_match": true,
+  "rows": [
+    {
+      "ap_ar": "Journal Entry Voucher",
+      "debit": "321.00",
+      "credit": "0.00"
+    },
+    {
+      "ap_ar": "Journal Entry Voucher",
+      "debit": "0.00",
+      "credit": "321.00"
+    }
+  ]
+}

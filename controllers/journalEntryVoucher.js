@@ -313,7 +313,12 @@ exports.getById = async (req, res) => {
         ]
       },
       include: [
-        { model: JournalEntryVoucherModel, as: 'JournalEntries', required: false },
+        {
+          model: JournalEntryVoucherModel,
+          as: 'JournalEntries',
+          required: false,
+          where: literal('`JournalEntries`.`LinkID` = `TransactionTable`.`LinkID`')
+        },
         { model: AttachmentModel, as: 'Attachments', required: false },
         { model: EmployeeModel, as: 'RequestedByEmployee', required: false },
         { model: FundsModel, as: 'Funds', required: false }
