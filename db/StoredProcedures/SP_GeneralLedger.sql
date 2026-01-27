@@ -124,9 +124,6 @@ BEGIN
         UNION ALL
 
         -- Part 4: Burial & Marriage Receipts (Credit side)
-        -- Using Item accounts if available, fallback to Petty Cash for now as previously set
-        -- Actually for receipts we usually Credit the income account.
-        -- Part 4 covers situations where it's hardcoded for Burial/Marriage.
         SELECT 
             trt.ID + 1000000 AS id, 
             trt.ID AS transaction_id,
@@ -174,7 +171,7 @@ BEGIN
         FROM transactiontable trt
         LEFT JOIN funds fnd ON fnd.ID = trt.FundsID
         WHERE (trt.DocumentTypeID = 6)
-          AND trt.Status IN ('Posted', 'Approved', 'approved', 'Requested') -- Adjust status as needed
+          AND trt.Status IN ('Posted', 'Approved', 'approved', 'Requested')
           AND ('10101010' LIKE @cleanMatch OR p_accountCode = '%')
           AND (CONCAT(trt.FundsID, '') LIKE p_fundID OR p_fundID = '%')
           AND (CONCAT(trt.LinkID, '') LIKE @targetLinkID)
@@ -183,6 +180,7 @@ BEGIN
         UNION ALL
 
         -- Part 6: Service Invoice (Credit side: Items)
+        -- JOIN with Item table to get Item Name
         SELECT 
             tri.ID + 6000000 AS id,
             trt.ID AS transaction_id,
@@ -192,7 +190,7 @@ BEGIN
             coa.Name AS account_name,
             coa.AccountCode AS account_code,
             trt.InvoiceDate AS date,
-            CONCAT('GSI Item: ', IFNULL(tri.Remarks, '')) AS ledger_item,
+            CONCAT('GSI Item: ', IFNULL(itm.Name, IFNULL(tri.Remarks, 'Item'))) AS ledger_item,
             trt.InvoiceNumber AS invoice_number,
             p_accountCode AS account_code_display,
             coa.Name AS account_name_display,
@@ -201,10 +199,11 @@ BEGIN
             '' AS municipality
         FROM transactiontable trt
         JOIN transactionitems tri ON TRIM(tri.LinkID) = TRIM(trt.LinkID)
+        LEFT JOIN item itm ON itm.ID = tri.ItemID
         JOIN chartofaccounts coa ON coa.ID = tri.ChargeAccountID
         LEFT JOIN funds fnd ON fnd.ID = trt.FundsID
         WHERE (trt.DocumentTypeID = 6)
-          AND trt.Status IN ('Posted', 'Approved', 'approved', 'Requested') -- Adjust status as needed
+          AND trt.Status IN ('Posted', 'Approved', 'approved', 'Requested')
           AND (REPLACE(coa.AccountCode, '-', '') LIKE @cleanMatch OR p_accountCode = '%')
           AND (CONCAT(trt.FundsID, '') LIKE p_fundID OR p_fundID = '%')
           AND (CONCAT(trt.LinkID, '') LIKE @targetLinkID)
