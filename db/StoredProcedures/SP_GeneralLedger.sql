@@ -6,14 +6,12 @@ CREATE PROCEDURE SP_GeneralLedger (
     IN p_accountCode VARCHAR(50),
     IN p_fundID VARCHAR(50),
     IN p_cutoff VARCHAR(50),
-    IN p_linkID VARCHAR(50) -- Added LinkID filter
+    IN p_linkID VARCHAR(50)
 )
 BEGIN
-    -- Standardize dash-less match
     SET @cleanMatch = REPLACE(p_accountCode, '-', '');
     IF @cleanMatch = '' THEN SET @cleanMatch = '%'; END IF;
     
-    -- Handle optional LinkID
     SET @targetLinkID = p_linkID;
     IF @targetLinkID = '' OR @targetLinkID IS NULL THEN SET @targetLinkID = '%'; END IF;
 
@@ -81,8 +79,8 @@ BEGIN
             trt.InvoiceNumber AS invoice_number,
             p_accountCode AS account_code_display,
             coa.Name AS account_name_display,
-            trt.Debit AS debit,
-            trt.Credit AS credit,
+            tri.Debit AS debit,
+            tri.Credit AS credit,
             '' AS municipality
         FROM transactiontable trt
         JOIN transactionitems tri ON TRIM(tri.LinkID) = TRIM(trt.LinkID)
@@ -125,7 +123,10 @@ BEGIN
 
         UNION ALL
 
-        -- Part 4: Burial & Marriage Receipts (Credit side: 1-01-01-020)
+        -- Part 4: Burial & Marriage Receipts (Credit side)
+        -- Using Item accounts if available, fallback to Petty Cash for now as previously set
+        -- Actually for receipts we usually Credit the income account.
+        -- Part 4 covers situations where it's hardcoded for Burial/Marriage.
         SELECT 
             trt.ID + 1000000 AS id, 
             trt.ID AS transaction_id,
@@ -147,6 +148,64 @@ BEGIN
         WHERE (trt.DocumentTypeID IN (18, 19))
           AND trt.Status IN ('Posted', 'Approved', 'approved')
           AND ('10101020' LIKE @cleanMatch OR p_accountCode = '%')
+          AND (CONCAT(trt.FundsID, '') LIKE p_fundID OR p_fundID = '%')
+          AND (CONCAT(trt.LinkID, '') LIKE @targetLinkID)
+          AND DATE(trt.InvoiceDate) <= DATE(p_cutoff)
+
+        UNION ALL
+
+        -- Part 5: Service Invoice (Debit side: Cash)
+        SELECT 
+            trt.ID + 5000000 AS id,
+            trt.ID AS transaction_id,
+            trt.LinkID AS link_id,
+            'Service Invoice' AS ap_ar,
+            IFNULL(fnd.Name, 'N/A') AS fund,
+            'Cash - Local Treasury' AS account_name,
+            '1-01-01-010' AS account_code,
+            trt.InvoiceDate AS date,
+            CONCAT('Service Invoice: ', IFNULL(trt.CustomerName, '')) AS ledger_item,
+            trt.InvoiceNumber AS invoice_number,
+            p_accountCode AS account_code_display,
+            'Cash - Local Treasury' AS account_name_display,
+            trt.Debit AS debit,
+            0.00 AS credit,
+            '' AS municipality
+        FROM transactiontable trt
+        LEFT JOIN funds fnd ON fnd.ID = trt.FundsID
+        WHERE (trt.DocumentTypeID = 6)
+          AND trt.Status IN ('Posted', 'Approved', 'approved', 'Requested') -- Adjust status as needed
+          AND ('10101010' LIKE @cleanMatch OR p_accountCode = '%')
+          AND (CONCAT(trt.FundsID, '') LIKE p_fundID OR p_fundID = '%')
+          AND (CONCAT(trt.LinkID, '') LIKE @targetLinkID)
+          AND DATE(trt.InvoiceDate) <= DATE(p_cutoff)
+
+        UNION ALL
+
+        -- Part 6: Service Invoice (Credit side: Items)
+        SELECT 
+            tri.ID + 6000000 AS id,
+            trt.ID AS transaction_id,
+            trt.LinkID AS link_id,
+            'Service Invoice' AS ap_ar,
+            IFNULL(fnd.Name, 'N/A') AS fund,
+            coa.Name AS account_name,
+            coa.AccountCode AS account_code,
+            trt.InvoiceDate AS date,
+            CONCAT('GSI Item: ', IFNULL(tri.Remarks, '')) AS ledger_item,
+            trt.InvoiceNumber AS invoice_number,
+            p_accountCode AS account_code_display,
+            coa.Name AS account_name_display,
+            0.00 AS debit,
+            tri.Credit AS credit,
+            '' AS municipality
+        FROM transactiontable trt
+        JOIN transactionitems tri ON TRIM(tri.LinkID) = TRIM(trt.LinkID)
+        JOIN chartofaccounts coa ON coa.ID = tri.ChargeAccountID
+        LEFT JOIN funds fnd ON fnd.ID = trt.FundsID
+        WHERE (trt.DocumentTypeID = 6)
+          AND trt.Status IN ('Posted', 'Approved', 'approved', 'Requested') -- Adjust status as needed
+          AND (REPLACE(coa.AccountCode, '-', '') LIKE @cleanMatch OR p_accountCode = '%')
           AND (CONCAT(trt.FundsID, '') LIKE p_fundID OR p_fundID = '%')
           AND (CONCAT(trt.LinkID, '') LIKE @targetLinkID)
           AND DATE(trt.InvoiceDate) <= DATE(p_cutoff)
