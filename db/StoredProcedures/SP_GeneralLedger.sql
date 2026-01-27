@@ -181,6 +181,7 @@ BEGIN
 
         -- Part 6: Service Invoice (Credit side: Items)
         -- JOIN with Item table to get Item Name
+        -- Updated to use Quantity * Price for Credit value
         SELECT 
             tri.ID + 6000000 AS id,
             trt.ID AS transaction_id,
@@ -195,7 +196,7 @@ BEGIN
             p_accountCode AS account_code_display,
             coa.Name AS account_name_display,
             0.00 AS debit,
-            tri.Credit AS credit,
+            (IFNULL(tri.Quantity, 0) * IFNULL(tri.Price, 0)) AS credit,
             '' AS municipality
         FROM transactiontable trt
         JOIN transactionitems tri ON TRIM(tri.LinkID) = TRIM(trt.LinkID)
