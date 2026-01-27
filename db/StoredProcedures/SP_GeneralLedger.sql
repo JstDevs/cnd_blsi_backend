@@ -79,8 +79,8 @@ BEGIN
             trt.InvoiceNumber AS invoice_number,
             p_accountCode AS account_code_display,
             coa.Name AS account_name_display,
-            tri.Debit AS debit,
-            tri.Credit AS credit,
+            (tri.Debit + ABS(IFNULL(tri.WithheldAmount, 0))) AS debit,
+            (tri.Credit + ABS(IFNULL(tri.WithheldAmount, 0))) AS credit,
             '' AS municipality
         FROM transactiontable trt
         JOIN transactionitems tri ON TRIM(tri.LinkID) = TRIM(trt.LinkID)
@@ -91,6 +91,37 @@ BEGIN
           AND (trt.Status LIKE '%Posted%' OR trt.Status LIKE '%Approved%') -- Inclusive check for "Posted, Cheque Posted"
           AND (tri.Debit > 0 OR tri.Credit > 0)
           AND (REPLACE(coa.AccountCode, '-', '') LIKE @cleanMatch OR p_accountCode = '%')
+          AND (CONCAT(trt.FundsID, '') LIKE p_fundID OR p_fundID = '%')
+          AND (CONCAT(trt.LinkID, '') LIKE @targetLinkID)
+          AND DATE(trt.InvoiceDate) <= DATE(p_cutoff)
+
+        UNION ALL
+
+        -- Part 2B: Disbursement Voucher - TAX WITHHELD
+        SELECT 
+            tri.ID + 2000000 AS id,
+            trt.ID AS transaction_id,
+            trt.LinkID AS link_id,
+            trt.APAR AS ap_ar,
+            IFNULL(fnd.Name, 'N/A') AS fund,
+            'Due to BIR' AS account_name,
+            '2-02-01-010' AS account_code,
+            trt.InvoiceDate AS date,
+            CONCAT('DV Tax Withheld: ', IFNULL(itm.Name, IFNULL(tri.Remarks, 'Item'))) AS ledger_item,
+            trt.InvoiceNumber AS invoice_number,
+            p_accountCode AS account_code_display,
+            'Due to BIR' AS account_name_display,
+            0.00 AS debit,
+            ABS(tri.WithheldAmount) AS credit,
+            '' AS municipality
+        FROM transactiontable trt
+        JOIN transactionitems tri ON TRIM(tri.LinkID) = TRIM(trt.LinkID)
+        LEFT JOIN item itm ON itm.ID = tri.ItemID
+        LEFT JOIN funds fnd ON fnd.ID = trt.FundsID
+        WHERE (trt.APAR LIKE '%Disbursement Voucher%' OR trt.APAR LIKE '%DV%' OR trt.DocumentTypeID IN (4, 5, 14))
+          AND (trt.Status LIKE '%Posted%' OR trt.Status LIKE '%Approved%')
+          AND (IFNULL(tri.WithheldAmount, 0) <> 0)
+          AND ('20201010' LIKE @cleanMatch OR p_accountCode = '%')
           AND (CONCAT(trt.FundsID, '') LIKE p_fundID OR p_fundID = '%')
           AND (CONCAT(trt.LinkID, '') LIKE @targetLinkID)
           AND DATE(trt.InvoiceDate) <= DATE(p_cutoff)
