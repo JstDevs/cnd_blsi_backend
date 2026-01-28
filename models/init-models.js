@@ -428,6 +428,7 @@ function initModels(sequelize) {
   });
 
   Check.belongsTo(bank, { as: "Bank", foreignKey: "BankID" });
+  Check.belongsTo(TransactionTable, { as: "Disbursement", foreignKey: "DisbursementID", targetKey: "LinkID" });
   Check.belongsTo(employee, { as: "SignatoryOne", foreignKey: "SignatoryOneID" });
   Check.belongsTo(employee, { as: "SignatoryTwo", foreignKey: "SignatoryTwoID" });
 

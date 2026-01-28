@@ -257,6 +257,14 @@ exports.checkList = async (req, res) => {
   try {
     const checks = await CheckModel.findAll({
       where: { Active: true },
+      include: [
+        {
+          model: TransactionTableModel,
+          as: 'Disbursement',
+          required: false,
+          attributes: ['FundsID', 'InvoiceDate', 'InvoiceNumber']
+        }
+      ]
     });
 
     res.json(checks);
