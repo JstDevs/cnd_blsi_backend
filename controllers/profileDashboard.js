@@ -581,18 +581,24 @@ exports.collectionTotals = async (req, res) => {
     // 2. Common where base
     const commonConditions = {
       [Op.and]: [
-        { Status: 'Posted' },
+        { Status: { [Op.like]: 'Posted%' } },
         dateCondition
       ]
     };
 
     // 3. Receipt types
-    const receiptTypes = [
-      { label: 'Burial', apar: 'Burial Receipt' },
-      { label: 'Marriage', apar: 'Marriage Receipt' },
-      { label: 'General', apar: 'Official Receipt' },
-      { label: 'Cedula', apar: 'Community Tax Certificate' }
+    const allReceiptTypes = [
+      { label: 'Burial', apar: 'Burial Receipt', key: 'burial' },
+      { label: 'Marriage', apar: 'Marriage Receipt', key: 'marriage' },
+      { label: 'General', apar: 'Official Receipt', key: 'general' },
+      { label: 'Cedula', apar: 'Community Tax Certificate', key: 'cedula' }
     ];
+    
+    let receiptTypes = allReceiptTypes;
+    if (categories) {
+      const categoryArray = categories.split(',');
+      receiptTypes = allReceiptTypes.filter(rt => categoryArray.includes(rt.key));
+    }
 
     // 4. Perform queries in parallel
     const totals = await Promise.all(
