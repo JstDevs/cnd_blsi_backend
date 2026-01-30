@@ -178,7 +178,7 @@ exports.budgetAPARList = async (req, res) => {
 
 exports.disbursementAmounts = async (req, res) => {
   try {
-    const { aparType, dateRange, selectedDepartmentID } = req.query;
+    const { aparType, dateRange = 'Year', selectedDepartmentID } = req.query;
 
     // 1. Build date condition
     let dateCondition = {};
@@ -246,7 +246,7 @@ exports.disbursementAmounts = async (req, res) => {
 
 exports.obligationChart = async (req, res) => {
   try {
-    const { dateRange = 'Day', selectedDepartmentID } = req.query;
+    const { dateRange = 'Year', selectedDepartmentID } = req.query;
 
     // 1. Date condition
     let dateCondition = {};
@@ -347,7 +347,7 @@ exports.obligationChart = async (req, res) => {
 
 exports.travelOrderChart = async (req, res) => {
   try {
-    const { dateRange = 'Day' } = req.query;
+    const { dateRange = 'Year' } = req.query;
 
     // 1. Date condition
     let dateCondition = {};
@@ -427,7 +427,7 @@ exports.travelOrderChart = async (req, res) => {
 exports.disbursementChart = async (req, res) => {
   try {
     const {
-      dateRange = 'Day',
+      dateRange = 'Year',
       selectedDepartmentID,
     } = req.query;
 
@@ -526,7 +526,7 @@ exports.disbursementChart = async (req, res) => {
 
 exports.collectionTotals = async (req, res) => {
   try {
-    const { dateRange = 'Day', startDate, endDate, categories } = req.query;
+    const { dateRange = 'Year', startDate, endDate, categories } = req.query;
 
     console.log('--- COLLECTION TOTALS DEBUG ---');
     console.log('Parameters:', { dateRange, startDate, endDate, categories });
