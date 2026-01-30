@@ -7,7 +7,7 @@ const { getAllWithAssociations } = require("../models/associatedDependency");
 const getLatestApprovalVersion = require('../utils/getLatestApprovalVersion');
 const { Op, fn, col, literal } = require('sequelize');
 
-exports.saveBurialTransaction = async (req, res) => {
+const saveBurialTransaction = async (req, res) => {
   const t = await sequelize.transaction();
   try {
 
@@ -62,21 +62,34 @@ exports.saveBurialTransaction = async (req, res) => {
       },
       transaction: t
     });
-    
-        statusValue = matrixExists ? 'Requested' : 'Posted';
+
+    statusValue = matrixExists ? 'Requested' : 'Posted';
     const refID = IsNew ? generateLinkID() : data.LinkID;
     const latestapprovalversion = await getLatestApprovalVersion('Burial Receipt');
+
+    // Fetch and increment Invoice Number for new records
+    const documentTypeRecord = await documentType.findOne({
+      where: { ID: docID, Active: true },
+      attributes: ['CurrentNumber'],
+      transaction: t
+    });
+
+    if (!documentTypeRecord) {
+      throw new Error('Document type not found or inactive');
+    }
+
+    const invoiceNumber = IsNew ? (Number(documentTypeRecord.CurrentNumber) + 1) : data.InvoiceNumber;
 
     if (IsNew && !data.CustomerID && data.CustomerName) {
       try {
         console.log('Creating new Payor:', data.CustomerName);
         const newCustomer = await Customer.create({
-            Name: data.CustomerName,
-            Active: true,
-            CreatedBy: req.user.id,
-            CreatedDate: new Date(),
-            ModifyBy: req.user.id,
-            ModifyDate: new Date()
+          Name: data.CustomerName,
+          Active: true,
+          CreatedBy: req.user.id,
+          CreatedDate: new Date(),
+          ModifyBy: req.user.id,
+          ModifyDate: new Date()
         }, { transaction: t });
         data.CustomerID = newCustomer.ID;
       } catch (err) {
@@ -87,39 +100,39 @@ exports.saveBurialTransaction = async (req, res) => {
     // ---------------- Create New Deceased if needed ----------------
     if (IsNew && !data.DeceasedCustomerID && data.DeceasedCustomerName) {
       try {
-         console.log('Creating New Deceased:', data.DeceasedCustomerName);
-         const newDeceased = await Customer.create({
-            Name: data.DeceasedCustomerName,
-            Active: true,
-            CreatedBy: req.user.id,
-            CreatedDate: new Date(),
-            ModifyBy: req.user.id,
-            ModifyDate: new Date()
-         }, { transaction: t });
-         data.DeceasedCustomerID = newDeceased.ID; // Update ID for the receipt
+        console.log('Creating New Deceased:', data.DeceasedCustomerName);
+        const newDeceased = await Customer.create({
+          Name: data.DeceasedCustomerName,
+          Active: true,
+          CreatedBy: req.user.id,
+          CreatedDate: new Date(),
+          ModifyBy: req.user.id,
+          ModifyDate: new Date()
+        }, { transaction: t });
+        data.DeceasedCustomerID = newDeceased.ID; // Update ID for the receipt
       } catch (err) {
-         console.error('Error creating deceased:', err);
+        console.error('Error creating deceased:', err);
       }
     }
 
-        // ---------------- Create New Deceased if needed ----------------
+    // ---------------- Create New Deceased if needed ----------------
     if (IsNew && !data.DeceasedCustomerID && data.DeceasedCustomerName) {
       try {
-         console.log('Creating New Deceased:', data.DeceasedCustomerName);
-         const newDeceased = await Customer.create({
-            Name: data.DeceasedCustomerName,
-            Active: true,
-            CreatedBy: req.user.id,
-            CreatedDate: new Date(),
-            ModifyBy: req.user.id,
-            ModifyDate: new Date()
-         }, { transaction: t });
-         data.DeceasedCustomerID = newDeceased.ID; // Update ID for the receipt
+        console.log('Creating New Deceased:', data.DeceasedCustomerName);
+        const newDeceased = await Customer.create({
+          Name: data.DeceasedCustomerName,
+          Active: true,
+          CreatedBy: req.user.id,
+          CreatedDate: new Date(),
+          ModifyBy: req.user.id,
+          ModifyDate: new Date()
+        }, { transaction: t });
+        data.DeceasedCustomerID = newDeceased.ID; // Update ID for the receipt
       } catch (err) {
-         console.error('Error creating deceased:', err);
+        console.error('Error creating deceased:', err);
       }
     }
-    
+
     if (IsNew) {
       // Create Transaction Table record
       await TransactionTable.create({
@@ -131,7 +144,7 @@ exports.saveBurialTransaction = async (req, res) => {
         CustomerID: data.CustomerID,
         CustomerName: data.CustomerName,
         ReferenceNumber: data.ReferenceNumber,
-        InvoiceNumber: data.InvoiceNumber,
+        InvoiceNumber: invoiceNumber,
         Total: data.Total,
         PaymentType: data.PaymentTypeID,
         Remarks: data.Remarks,
@@ -150,8 +163,8 @@ exports.saveBurialTransaction = async (req, res) => {
       }, { transaction: t });
 
 
-      await documentType.increment(
-        { CurrentNumber: 1 },
+      await documentType.update(
+        { CurrentNumber: invoiceNumber },
         {
           where: { ID: docID },
           transaction: t
@@ -259,7 +272,7 @@ exports.saveBurialTransaction = async (req, res) => {
   }
 }
 
-exports.getAll = async (req, res) => {
+const getAll = async (req, res) => {
   try {
     const results = await TransactionTable.findAll({
       where: {
@@ -308,7 +321,7 @@ exports.getAll = async (req, res) => {
 };
 
 
-exports.getById = async (req, res) => {
+const getById = async (req, res) => {
   try {
     const item = await BurialRecord.findByPk(req.params.id);
     if (item) res.json(item);
@@ -318,7 +331,7 @@ exports.getById = async (req, res) => {
   }
 };
 
-exports.delete = async (req, res) => {
+const deleteRecord = async (req, res) => {
   const transactionId = req.params.id;
   const t = await sequelize.transaction();
 
@@ -357,7 +370,7 @@ exports.delete = async (req, res) => {
   }
 };
 
-exports.approve = async (req, res) => {
+const approve = async (req, res) => {
   const { ID } = req.body;
   const t = await sequelize.transaction();
   try {
@@ -389,7 +402,7 @@ exports.approve = async (req, res) => {
   }
 };
 
-exports.reject = async (req, res) => {
+const reject = async (req, res) => {
   const { ID, reason } = req.body;
   const t = await sequelize.transaction();
 
@@ -417,4 +430,37 @@ exports.reject = async (req, res) => {
     console.error('Error rejecting transaction:', error);
     res.status(500).json({ error: error.message || 'Server error.' });
   }
+};
+
+const getCurrentNumber = async (req, res) => {
+  try {
+    const record = await documentType.findOne({
+      where: {
+        ID: 18,
+        Active: 1
+      },
+      attributes: ['CurrentNumber']
+    });
+
+    if (!record) {
+      return res.status(404).json({ message: 'Document type not found or inactive' });
+    }
+
+    const incrementedValue = Number(record.CurrentNumber) + 1;
+
+    res.status(200).json({ CurrentNumber: incrementedValue });
+  } catch (err) {
+    console.error(err);
+    res.status(500).json({ error: err.message || 'Failed to fetch current number' });
+  }
+};
+
+module.exports = {
+  saveBurialTransaction,
+  getAll,
+  getById,
+  delete: deleteRecord,
+  approve,
+  reject,
+  getCurrentNumber
 };

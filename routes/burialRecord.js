@@ -13,5 +13,6 @@ router.get('/', requireAuth, controller.getAll);
 // router.get('/:id', requireAuth, controller.getById);
 // router.put('/:id', requireAuth, controller.update);
 router.delete('/:id', requireAuth, controller.delete);
+router.get('/getCurrentNumber', requireAuth, controller.getCurrentNumber);
 
 module.exports = router;
