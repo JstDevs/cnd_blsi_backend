@@ -526,27 +526,57 @@ exports.disbursementChart = async (req, res) => {
 
 exports.collectionTotals = async (req, res) => {
   try {
-    const { dateRange = 'Day' } = req.query;
+    const { dateRange = 'Day', startDate, endDate, categories } = req.query;
 
     // 1. Build date condition
     let dateCondition = {};
-    switch (dateRange) {
-      case 'Year':
-        dateCondition = where(fn('YEAR', col('InvoiceDate')), fn('YEAR', literal('NOW()')));
-        break;
-      case 'Month':
-        dateCondition = {
-          [Op.and]: [
-            where(fn('YEAR', col('InvoiceDate')), fn('YEAR', literal('NOW()'))),
-            where(fn('MONTH', col('InvoiceDate')), fn('MONTH', literal('NOW()')))
-          ]
-        };
-        break;
-      case 'Day':
-      default:
-        dateCondition = where(fn('DATE', col('InvoiceDate')), fn('CURDATE'));
-        break;
+
+    // switch (dateRange) {
+    //   case 'Year':
+    //     dateCondition = where(fn('YEAR', col('InvoiceDate')), fn('YEAR', literal('NOW()')));
+    //     break;
+    //   case 'Month':
+    //     dateCondition = {
+    //       [Op.and]: [
+    //         where(fn('YEAR', col('InvoiceDate')), fn('YEAR', literal('NOW()'))),
+    //         where(fn('MONTH', col('InvoiceDate')), fn('MONTH', literal('NOW()')))
+    //       ]
+    //     };
+    //     break;
+    //   case 'Day':
+    //   default:
+    //     dateCondition = where(fn('DATE', col('InvoiceDate')), fn('CURDATE'));
+    //     break;
+    // }
+
+    if (startDate && endDate) {
+      dateCondition = {
+        InvoiceDate: { [Op.between]: [startDate, endDate] }
+      };
+    } else if (startDate) {
+      dateCondition = { InvoiceDate: { [Op.gte]: startDate } };
+    } else if (endDate) {
+      dateCondition = { InvoiceDate: { [Op.lte]: endDate } };
+    } else {
+      switch (dateRange) {
+        case 'Year':
+          dateCondition = where(fn('YEAR', col('InvoiceDate')), fn('YEAR', literal('NOW()')));
+          break;
+        case 'Month':
+          dateCondition = {
+            [Op.and]: [
+              where(fn('YEAR', col('InvoiceDate')), fn('YEAR', literal('NOW()'))),
+              where(fn('MONTH', col('InvoiceDate')), fn('MONTH', literal('NOW()')))
+            ]
+          };
+          break;
+        case 'Day':
+        default:
+          dateCondition = where(fn('DATE', col('InvoiceDate')), fn('CURDATE'));
+          break;    
+      }
     }
+
 
     // 2. Common where base
     const commonConditions = {
