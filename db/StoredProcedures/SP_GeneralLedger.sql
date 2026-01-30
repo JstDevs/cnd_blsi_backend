@@ -269,6 +269,122 @@ BEGIN
           AND (CONCAT(trt.FundsID, '') LIKE p_fundID OR p_fundID = '%')
           AND (CONCAT(trt.LinkID, '') LIKE @targetLinkID)
           AND DATE(trt.InvoiceDate) <= DATE(p_cutoff)
+        
+        UNION ALL
+
+        -- Part 7: Community Tax Certificate - Individual (DocID 5)
+        -- Debit: Cash - Local Treasury (1-01-01-010)
+        SELECT 
+            trt.ID + 7000000 AS id,
+            trt.ID AS transaction_id,
+            trt.LinkID AS link_id,
+            'Community Tax' AS ap_ar,
+            IFNULL(fnd.Name, 'N/A') AS fund,
+            'Cash - Local Treasury' AS account_name,
+            '1-01-01-010' AS account_code,
+            trt.InvoiceDate AS date,
+            CONCAT('CTC Individual: ', IFNULL(trt.CustomerName, '')) AS ledger_item,
+            trt.InvoiceNumber AS invoice_number,
+            p_accountCode AS account_code_display,
+            'Cash - Local Treasury' AS account_name_display,
+            trt.Total AS debit,
+            0.00 AS credit,
+            '' AS municipality
+        FROM transactiontable trt
+        LEFT JOIN funds fnd ON fnd.ID = trt.FundsID
+        WHERE (trt.DocumentTypeID = 5)
+          AND (trt.Status LIKE '%Posted%' OR trt.Status LIKE '%Approved%')
+          AND ('10101010' LIKE @cleanMatch OR p_accountCode = '%')
+          AND (CONCAT(trt.FundsID, '') LIKE p_fundID OR p_fundID = '%')
+          AND (CONCAT(trt.LinkID, '') LIKE @targetLinkID)
+          AND DATE(trt.InvoiceDate) <= DATE(p_cutoff)
+
+        UNION ALL
+
+        -- Part 7B: Community Tax Certificate - Individual (DocID 5)
+        -- Credit: Community Tax Individual (4-01-01-050)
+        SELECT 
+            trt.ID + 7500000 AS id,
+            trt.ID AS transaction_id,
+            trt.LinkID AS link_id,
+            'Community Tax' AS ap_ar,
+            IFNULL(fnd.Name, 'N/A') AS fund,
+            'Community Tax - Individual' AS account_name,
+            '4-01-01-050' AS account_code,
+            trt.InvoiceDate AS date,
+            CONCAT('CTC Individual: ', IFNULL(trt.CustomerName, '')) AS ledger_item,
+            trt.InvoiceNumber AS invoice_number,
+            p_accountCode AS account_code_display,
+            'Community Tax - Individual' AS account_name_display,
+            0.00 AS debit,
+            trt.Total AS credit,
+            '' AS municipality
+        FROM transactiontable trt
+        LEFT JOIN funds fnd ON fnd.ID = trt.FundsID
+        WHERE (trt.DocumentTypeID = 5)
+          AND (trt.Status LIKE '%Posted%' OR trt.Status LIKE '%Approved%')
+          AND ('40101050' LIKE @cleanMatch OR p_accountCode = '%')
+          AND (CONCAT(trt.FundsID, '') LIKE p_fundID OR p_fundID = '%')
+          AND (CONCAT(trt.LinkID, '') LIKE @targetLinkID)
+          AND DATE(trt.InvoiceDate) <= DATE(p_cutoff)
+
+        UNION ALL
+
+        -- Part 8: Community Tax Certificate - Corporation (DocID 27)
+        -- Debit: Cash - Local Treasury (1-01-01-010)
+        SELECT 
+            trt.ID + 8000000 AS id,
+            trt.ID AS transaction_id,
+            trt.LinkID AS link_id,
+            'Community Tax' AS ap_ar,
+            IFNULL(fnd.Name, 'N/A') AS fund,
+            'Cash - Local Treasury' AS account_name,
+            '1-01-01-010' AS account_code,
+            trt.InvoiceDate AS date,
+            CONCAT('CTC Corporation: ', IFNULL(trt.CustomerName, '')) AS ledger_item,
+            trt.InvoiceNumber AS invoice_number,
+            p_accountCode AS account_code_display,
+            'Cash - Local Treasury' AS account_name_display,
+            trt.Total AS debit,
+            0.00 AS credit,
+            '' AS municipality
+        FROM transactiontable trt
+        LEFT JOIN funds fnd ON fnd.ID = trt.FundsID
+        WHERE (trt.DocumentTypeID = 27)
+          AND (trt.Status LIKE '%Posted%' OR trt.Status LIKE '%Approved%')
+          AND ('10101010' LIKE @cleanMatch OR p_accountCode = '%')
+          AND (CONCAT(trt.FundsID, '') LIKE p_fundID OR p_fundID = '%')
+          AND (CONCAT(trt.LinkID, '') LIKE @targetLinkID)
+          AND DATE(trt.InvoiceDate) <= DATE(p_cutoff)
+
+        UNION ALL
+
+        -- Part 8B: Community Tax Certificate - Corporation (DocID 27)
+        -- Credit: Community Tax - Corporation (usually same or similar COA, using 4-01-01-050 as specified)
+        SELECT 
+            trt.ID + 8500000 AS id,
+            trt.ID AS transaction_id,
+            trt.LinkID AS link_id,
+            'Community Tax' AS ap_ar,
+            IFNULL(fnd.Name, 'N/A') AS fund,
+            'Community Tax - Corporation' AS account_name,
+            '4-01-01-050' AS account_code,
+            trt.InvoiceDate AS date,
+            CONCAT('CTC Corporation: ', IFNULL(trt.CustomerName, '')) AS ledger_item,
+            trt.InvoiceNumber AS invoice_number,
+            p_accountCode AS account_code_display,
+            'Community Tax - Corporation' AS account_name_display,
+            0.00 AS debit,
+            trt.Total AS credit,
+            '' AS municipality
+        FROM transactiontable trt
+        LEFT JOIN funds fnd ON fnd.ID = trt.FundsID
+        WHERE (trt.DocumentTypeID = 27)
+          AND (trt.Status LIKE '%Posted%' OR trt.Status LIKE '%Approved%')
+          AND ('40101050' LIKE @cleanMatch OR p_accountCode = '%')
+          AND (CONCAT(trt.FundsID, '') LIKE p_fundID OR p_fundID = '%')
+          AND (CONCAT(trt.LinkID, '') LIKE @targetLinkID)
+          AND DATE(trt.InvoiceDate) <= DATE(p_cutoff)
 
     ) AS tbl
     ORDER BY date, id;
