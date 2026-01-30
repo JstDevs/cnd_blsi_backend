@@ -501,9 +501,9 @@ exports.disbursementChart = async (req, res) => {
     // 5. Prepare chart-style JSON
     if (results.length === 0) {
       chartData = [
-        { status: 'Posted', total: '0.00'},
-        { status: 'Requested', total: '0.00'},
-        { status: 'Rejected', total: '0.00'}
+        { status: 'Posted', total: '0.00' },
+        { status: 'Requested', total: '0.00' },
+        { status: 'Rejected', total: '0.00' }
       ];
     } else {
       chartData = ['Posted', 'Requested', 'Rejected'].map((label) => {
@@ -528,6 +528,9 @@ exports.collectionTotals = async (req, res) => {
   try {
     const { dateRange = 'Day', startDate, endDate, categories } = req.query;
 
+    console.log('--- COLLECTION TOTALS DEBUG ---');
+    console.log('Parameters:', { dateRange, startDate, endDate, categories });
+
     // 1. Build date condition
     let dateCondition = {};
 
@@ -551,12 +554,12 @@ exports.collectionTotals = async (req, res) => {
 
     if (startDate && endDate) {
       dateCondition = {
-        InvoiceDate: { [Op.between]: [startDate, endDate] }
+        InvoiceDate: { [Op.between]: [startDate + ' 00:00:00', endDate + ' 23:59:59'] }
       };
     } else if (startDate) {
-      dateCondition = { InvoiceDate: { [Op.gte]: startDate } };
+      dateCondition = { InvoiceDate: { [Op.gte]: startDate + ' 00:00:00' } };
     } else if (endDate) {
-      dateCondition = { InvoiceDate: { [Op.lte]: endDate } };
+      dateCondition = { InvoiceDate: { [Op.lte]: endDate + ' 23:59:59' } };
     } else {
       switch (dateRange) {
         case 'Year':
@@ -573,7 +576,7 @@ exports.collectionTotals = async (req, res) => {
         case 'Day':
         default:
           dateCondition = where(fn('DATE', col('InvoiceDate')), fn('CURDATE'));
-          break;    
+          break;
       }
     }
 
@@ -593,7 +596,7 @@ exports.collectionTotals = async (req, res) => {
       { label: 'General', apar: 'Official Receipt', key: 'general' },
       { label: 'Cedula', apar: 'Community Tax Certificate', key: 'cedula' }
     ];
-    
+
     let receiptTypes = allReceiptTypes;
     if (categories) {
       const categoryArray = categories.split(',');
@@ -613,6 +616,8 @@ exports.collectionTotals = async (req, res) => {
         })
       )
     );
+
+    console.log('Database Totals Result:', totals);
 
     // 5. Prepare final response with totals
     const result = {};
