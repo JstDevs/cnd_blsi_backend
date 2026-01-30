@@ -73,7 +73,7 @@ exports.userDocumentsList = async (req, res) => {
       }
     ];
 
-    const results = await TransactionTableModel.findAll({
+    const results = await TransactionTableModel.unscoped().findAll({
       where: whereClause,
       include,
       order: [['CreatedDate', 'DESC']]
@@ -158,7 +158,7 @@ exports.budgetList = async (req, res) => {
 exports.budgetAPARList = async (req, res) => {
   try {
     const { budgetID } = req.params;
-    const results = await TransactionTableModel.findAll({
+    const results = await TransactionTableModel.unscoped().findAll({
       where: {
         BudgetID: budgetID,
         APAR: {
@@ -222,7 +222,7 @@ exports.disbursementAmounts = async (req, res) => {
     }
 
     // 4. Query total (NO include to avoid SELECTing all employee fields)
-    const result = await TransactionTableModel.findOne({
+    const result = await TransactionTableModel.unscoped().findOne({
       attributes: [[fn('SUM', col('Total')), 'TotalSum']],
       where: whereClause,
       include: [
@@ -299,7 +299,7 @@ exports.obligationChart = async (req, res) => {
     }
 
     // 4. Query
-    const results = await TransactionTableModel.findAll({
+    const results = await TransactionTableModel.unscoped().findAll({
       attributes: [
         'Status',
         [fn('SUM', col('Total')), 'Total']
@@ -378,7 +378,7 @@ exports.travelOrderChart = async (req, res) => {
     };
 
     // 3. Run query grouped by Status
-    const results = await TransactionTableModel.findAll({
+    const results = await TransactionTableModel.unscoped().findAll({
       attributes: [
         'Status',
         [fn('SUM', col('Total')), 'Total']
@@ -482,7 +482,7 @@ exports.disbursementChart = async (req, res) => {
     }
 
     // 4. Execute query
-    const results = await TransactionTableModel.findAll({
+    const results = await TransactionTableModel.unscoped().findAll({
       attributes: [
         'Status',
         [fn('SUM', col('Total')), 'Total']
@@ -554,12 +554,15 @@ exports.collectionTotals = async (req, res) => {
 
     if (startDate && endDate) {
       dateCondition = {
-        InvoiceDate: { [Op.between]: [startDate + ' 00:00:00', endDate + ' 23:59:59'] }
+        [Op.and]: [
+          where(fn('DATE', col('InvoiceDate')), { [Op.gte]: startDate }),
+          where(fn('DATE', col('InvoiceDate')), { [Op.lte]: endDate })
+        ]
       };
     } else if (startDate) {
-      dateCondition = { InvoiceDate: { [Op.gte]: startDate + ' 00:00:00' } };
+      dateCondition = where(fn('DATE', col('InvoiceDate')), { [Op.gte]: startDate });
     } else if (endDate) {
-      dateCondition = { InvoiceDate: { [Op.lte]: endDate + ' 23:59:59' } };
+      dateCondition = where(fn('DATE', col('InvoiceDate')), { [Op.lte]: endDate });
     } else {
       switch (dateRange) {
         case 'Year':
@@ -606,7 +609,7 @@ exports.collectionTotals = async (req, res) => {
     // 4. Perform queries in parallel
     const totals = await Promise.all(
       receiptTypes.map(({ apar }) =>
-        TransactionTableModel.findOne({
+        TransactionTableModel.unscoped().findOne({
           attributes: [[fn('SUM', col('Total')), 'Total']],
           where: {
             ...commonConditions,
@@ -642,7 +645,7 @@ exports.collectionTotals = async (req, res) => {
 exports.collectionCharts = (receiptType) => {
   return async (req, res) => {
     try {
-      const results = await TransactionTableModel.findAll({
+      const results = await TransactionTableModel.unscoped().findAll({
         attributes: [
           [fn('DATE', col('InvoiceDate')), 'Date'],
           [fn('SUM', col('Total')), 'Total']
@@ -683,7 +686,7 @@ exports.collectionCharts = (receiptType) => {
 exports.collectionBarCharts = (receiptType) => {
   return async (req, res) => {
     try {
-      const results = await TransactionTableModel.findAll({
+      const results = await TransactionTableModel.unscoped().findAll({
         attributes: [
           [fn('DATE', col('InvoiceDate')), 'Date'],
           [fn('SUM', col('Total')), 'Total']
