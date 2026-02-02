@@ -96,6 +96,7 @@ var _VendorType = require("./vendorType");
 var _BusinessPermit = require("./businessPermit");
 var _UserUserAccess = require("./Useruseraccess");
 var _DataSource = require("./dataSource");
+var _Watermarks = require("./watermarks");
 const chartofAccounts = require("./chartofAccounts");
 
 function initModels(sequelize) {
@@ -196,6 +197,10 @@ function initModels(sequelize) {
   var BusinessPermit = _BusinessPermit(sequelize, DataTypes);
   var UserUserAccess = _UserUserAccess(sequelize, DataTypes);
   var DataSource = _DataSource(sequelize, DataTypes);
+  var Watermarks = _Watermarks(sequelize, DataTypes);
+
+  Watermarks.belongsTo(documentType, { as: "DocumentType", foreignKey: "DocumentID" });
+  documentType.hasMany(Watermarks, { as: "Watermarks", foreignKey: "DocumentID" });
 
   BudgetChange.belongsTo(BudgetType, { as: "BudgetType", foreignKey: "BudgetTypeID" });
   BudgetType.hasMany(BudgetChange, { as: "BudgetChanges", foreignKey: "BudgetTypeID" });
@@ -541,7 +546,8 @@ function initModels(sequelize) {
     vendorType,
     UserUserAccess,
     BusinessPermit,
-    DataSource
+    DataSource,
+    Watermarks
   ]
 
   for (const modelName in models) {
@@ -646,7 +652,8 @@ function initModels(sequelize) {
     vendorType,
     UserUserAccess,
     BusinessPermit,
-    DataSource
+    DataSource,
+    Watermarks
   };
 }
 module.exports = initModels;

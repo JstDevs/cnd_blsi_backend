@@ -1,7 +1,6 @@
-const { Watermarks } = require('../config/database');
+const { Watermarks, sequelize } = require('../config/database');
 const watermarks = Watermarks;
 const path = require('path');
-const watermarks = require('../models/watermarks');
 
 
 exports.create = async (req, res) => {
@@ -16,24 +15,19 @@ exports.create = async (req, res) => {
 
 exports.getAll = async (req, res) => {
   try {
-    console.log('GET /watermarks - Attempting to fetch latest record');
-    if (!watermarks) {
-      console.error('Watermarks model is UNDEFINED in controller!');
-      throw new Error('Watermarks model is not initialized');
-    }
-    const latest = await watermarks.findOne({
-      order: [['ID', 'DESC']],
+    const items = await watermarks.findAll({
+      include: [
+        {
+          model: sequelize.models.DocumentType,
+          as: 'DocumentType',
+          attributes: ['Name']
+        }
+      ],
+      order: [['ID', 'ASC']],
     });
 
-    if (!latest) {
-      console.log('GET /watermarks - No records found, returning empty object');
-      return res.json({});
-    }
-
-    // Convert Sequelize instance to plain object
-    const data = latest.toJSON();
-    console.log('GET /watermarks - Success');
-    res.json(data);
+    console.log(`GET /watermarks - Success, found ${items.length} records`);
+    res.json(items);
   } catch (err) {
     console.error('GET /watermarks - Error:', err.message);
     res.status(500).json({ error: err.message });
