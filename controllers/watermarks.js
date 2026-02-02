@@ -23,7 +23,7 @@ exports.getAll = async (req, res) => {
           attributes: ['Name']
         }
       ],
-      order: [['ID', 'ASC']],
+      order: [[{ model: sequelize.models.DocumentType, as: 'DocumentType' }, 'Name', 'ASC']],
     });
 
     console.log(`GET /watermarks - Success, found ${items.length} records`);
