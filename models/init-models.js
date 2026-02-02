@@ -98,6 +98,7 @@ var _BusinessPermit = require("./businessPermit");
 var _UserUserAccess = require("./Useruseraccess");
 var _DataSource = require("./dataSource");
 var _Watermarks = require("./watermarks");
+var _Signatories = require("./signatories");
 const chartofAccounts = require("./chartofAccounts");
 
 function initModels(sequelize) {
@@ -200,9 +201,19 @@ function initModels(sequelize) {
   var UserUserAccess = _UserUserAccess(sequelize, DataTypes);
   var DataSource = _DataSource(sequelize, DataTypes);
   var Watermarks = _Watermarks(sequelize, DataTypes);
+  var Signatories = _Signatories(sequelize, DataTypes);
 
   Watermarks.belongsTo(documentType, { as: "DocumentType", foreignKey: "DocumentID" });
   documentType.hasMany(Watermarks, { as: "Watermarks", foreignKey: "DocumentID" });
+
+  Signatories.belongsTo(documentType, { as: "DocumentType", foreignKey: "DocumentTypeID" });
+  documentType.hasMany(Signatories, { as: "Signatories", foreignKey: "DocumentTypeID" });
+
+  Signatories.belongsTo(employee, { as: "SignatoryOne", foreignKey: "EmployeeOne" });
+  Signatories.belongsTo(employee, { as: "SignatoryTwo", foreignKey: "EmployeeTwo" });
+  Signatories.belongsTo(employee, { as: "SignatoryThree", foreignKey: "EmployeeThree" });
+  Signatories.belongsTo(employee, { as: "SignatoryFour", foreignKey: "EmployeeFour" });
+  Signatories.belongsTo(employee, { as: "SignatoryFive", foreignKey: "EmployeeFive" });
 
   BudgetChange.belongsTo(BudgetType, { as: "BudgetType", foreignKey: "BudgetTypeID" });
   BudgetType.hasMany(BudgetChange, { as: "BudgetChanges", foreignKey: "BudgetTypeID" });
@@ -656,7 +667,8 @@ function initModels(sequelize) {
     UserUserAccess,
     BusinessPermit,
     DataSource,
-    Watermarks
+    Watermarks,
+    Signatories
   };
 }
 module.exports = initModels;

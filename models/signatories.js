@@ -1,5 +1,5 @@
 const Sequelize = require('sequelize');
-module.exports = function(sequelize, DataTypes) {
+module.exports = function (sequelize, DataTypes) {
   return sequelize.define('Signatories', {
     ID: {
       autoIncrement: true,
@@ -7,7 +7,7 @@ module.exports = function(sequelize, DataTypes) {
       allowNull: false,
       primaryKey: true
     },
-    DocumentID: {
+    DocumentTypeID: {
       type: DataTypes.BIGINT,
       allowNull: true
     },
@@ -34,7 +34,7 @@ module.exports = function(sequelize, DataTypes) {
   }, {
     sequelize,
     tableName: 'signatories',
-  
+
     timestamps: false
   });
 };

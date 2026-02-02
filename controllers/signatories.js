@@ -5,8 +5,8 @@ const path = require('path');
 
 exports.create = async (req, res) => {
   try {
-    const { DocumentID, EmployeeOne, EmployeeTwo, EmployeeThree, EmployeeFour, EmployeeFive } = req.body;
-    const item = await signatories.create({ DocumentID, EmployeeOne, EmployeeTwo, EmployeeThree, EmployeeFour, EmployeeFive });
+    const { DocumentTypeID, EmployeeOne, EmployeeTwo, EmployeeThree, EmployeeFour, EmployeeFive } = req.body;
+    const item = await signatories.create({ DocumentTypeID, EmployeeOne, EmployeeTwo, EmployeeThree, EmployeeFour, EmployeeFive });
     res.status(201).json(item);
   } catch (err) {
     res.status(500).json({ error: err.message });
@@ -21,15 +21,18 @@ exports.getAll = async (req, res) => {
           model: sequelize.models.DocumentType,
           as: 'DocumentType',
           attributes: ['Name']
-        }
+        },
+        { model: sequelize.models.Employee, as: 'SignatoryOne', attributes: ['FirstName', 'LastName'] },
+        { model: sequelize.models.Employee, as: 'SignatoryTwo', attributes: ['FirstName', 'LastName'] },
+        { model: sequelize.models.Employee, as: 'SignatoryThree', attributes: ['FirstName', 'LastName'] },
+        { model: sequelize.models.Employee, as: 'SignatoryFour', attributes: ['FirstName', 'LastName'] },
+        { model: sequelize.models.Employee, as: 'SignatoryFive', attributes: ['FirstName', 'LastName'] },
       ],
       order: [['ID', 'ASC']],
     });
 
-    console.log(`GET /signatories - Success, found ${items.length} records`);
     res.json(items);
   } catch (err) {
-    console.error('GET /signatories - Error:', err.message);
     res.status(500).json({ error: err.message });
   }
 };
@@ -47,8 +50,8 @@ exports.getById = async (req, res) => {
 
 exports.update = async (req, res) => {
   try {
-    const { DocumentID, EmployeeOne, EmployeeTwo, EmployeeThree, EmployeeFour, EmployeeFive } = req.body;
-    const [updated] = await signatories.update({ DocumentID, EmployeeOne, EmployeeTwo, EmployeeThree, EmployeeFour, EmployeeFive }, {
+    const { DocumentTypeID, EmployeeOne, EmployeeTwo, EmployeeThree, EmployeeFour, EmployeeFive } = req.body;
+    const [updated] = await signatories.update({ DocumentTypeID, EmployeeOne, EmployeeTwo, EmployeeThree, EmployeeFour, EmployeeFive }, {
       where: { ID: req.params.id }
     });
     if (updated) {
