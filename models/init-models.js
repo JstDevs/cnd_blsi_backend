@@ -48,6 +48,7 @@ var _Item = require("./item");
 var _ItemUnit = require("./itemUnit");
 var _JournalEntryVoucher = require("./journalEntryVoucher");
 var _Lgu = require("./lgu");
+var _LogoImages = require("./logoimages");
 var _MarketValueMatrix = require("./marketValueMatrix");
 var _MarriageRecord = require("./marriageRecord");
 var _MatrixClassification = require("./matrixClassification");
@@ -149,6 +150,7 @@ function initModels(sequelize) {
   var itemUnit = _ItemUnit(sequelize, DataTypes);
   var JournalEntryVoucher = _JournalEntryVoucher(sequelize, DataTypes);
   var Lgu = _Lgu(sequelize, DataTypes);
+  var LogoImages = _LogoImages(sequelize, DataTypes);
   var MarketValueMatrix = _MarketValueMatrix(sequelize, DataTypes);
   var MarriageRecord = _MarriageRecord(sequelize, DataTypes);
   var MatrixClassification = _MatrixClassification(sequelize, DataTypes);
@@ -605,6 +607,7 @@ function initModels(sequelize) {
     itemUnit,
     JournalEntryVoucher,
     Lgu,
+    LogoImages,
     MarketValueMatrix,
     MarriageRecord,
     MatrixClassification,

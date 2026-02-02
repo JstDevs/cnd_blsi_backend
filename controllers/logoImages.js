@@ -5,8 +5,11 @@ const path = require('path');
 
 exports.create = async (req, res) => {
   try {
-    const { ImageOne, ImageTwo, ImageThree, ImageFour, ImageFive, ImageSix, ImageSeven, ImageEight, ImageNine, ImageTen } = req.body;
-    const item = await logoimages.create({ ImageOne, ImageTwo, ImageThree, ImageFour, ImageFive, ImageSix, ImageSeven, ImageEight, ImageNine, ImageTen });
+    const fields = ['ImageOne', 'ImageTwo', 'ImageThree', 'ImageFour', 'ImageFive', 'ImageSix', 'ImageSeven', 'ImageEight', 'ImageNine', 'ImageTen'];
+    const data = {};
+    fields.forEach(f => { if (req.body[f] !== undefined) data[f] = req.body[f]; });
+
+    const item = await logoimages.create(data);
     res.status(201).json(item);
   } catch (err) {
     res.status(500).json({ error: err.message });
@@ -15,26 +18,41 @@ exports.create = async (req, res) => {
 
 exports.getAll = async (req, res) => {
   try {
-    console.log('GET /logoImages - Attempting to fetch latest record');
-    if (!logoimages) {
-      console.error('LogoImages model is UNDEFINED in controller!');
-      throw new Error('LogoImages model is not initialized');
-    }
+    console.log('GET /logoImages - Fetching latest record');
     const latest = await logoimages.findOne({
       order: [['ID', 'DESC']],
     });
 
     if (!latest) {
-      console.log('GET /logoImages - No records found, returning empty object');
+      console.log('GET /logoImages - No records found');
       return res.json({});
     }
 
-    // Convert Sequelize instance to plain object
     const data = latest.toJSON();
-    console.log('GET /logoImages - Success');
+    const fields = ['ImageOne', 'ImageTwo', 'ImageThree', 'ImageFour', 'ImageFive', 'ImageSix', 'ImageSeven', 'ImageEight', 'ImageNine', 'ImageTen'];
+
+    // Append full URL if the field has a value
+    fields.forEach(field => {
+      if (data[field]) {
+        data[field] = `${process.env.BASE_URL_SERVER}/uploads/${data[field]}`;
+      }
+    });
+
     res.json(data);
   } catch (err) {
     console.error('GET /logoImages - Error:', err.message);
+    res.status(500).json({ error: err.message });
+  }
+};
+
+exports.upload = async (req, res) => {
+  try {
+    if (!req.file) {
+      return res.status(400).json({ error: 'No file uploaded' });
+    }
+    const relativePath = path.join(req.uploadPath, req.file.filename).replace(/\\/g, '/');
+    res.json({ filePath: relativePath });
+  } catch (err) {
     res.status(500).json({ error: err.message });
   }
 };

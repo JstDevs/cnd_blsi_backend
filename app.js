@@ -179,6 +179,7 @@ const chequeGenerator = require("./routes/chequeGenerator");
 const profileDashboard = require("./routes/profileDashboard");
 const dataSourceRoutes = require('./routes/dataSource');
 const watermarksRoutes = require('./routes/watermarks');
+const logoImagesRoutes = require('./routes/logoimages');
 const { profile } = require('console');
 app.use('/auth', authRoutes);
 app.use('/accountcategory', accountcategoryRoutes);
@@ -311,6 +312,7 @@ app.use("/budgetTransfer", budgetTransfer);
 app.use("/fundTransfer", fundTransfer);
 app.use("/dataSource", dataSourceRoutes);
 app.use("/watermarks", watermarksRoutes);
+app.use("/logoImages", logoImagesRoutes);
 app.use("/chequeGenerator", chequeGenerator);
 app.use("/profileDashboard", profileDashboard);
 app.get('/', (req, res) => {
