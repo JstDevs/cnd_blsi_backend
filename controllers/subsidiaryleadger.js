@@ -1,5 +1,6 @@
 const { sequelize } = require('../config/database');
 const path = require('path');
+const fs = require('fs');
 const ExcelJS = require('exceljs');
 const exportToExcel = async (data, filename) => {
   const workbook = new ExcelJS.Workbook();
@@ -85,17 +86,30 @@ exports.view = async (req, res) => {
       FundID,
     } = req.body;
 
+    console.log('Subsidiary Ledger View Request:', req.body);
+
     const results = await sequelize.query(
       'CALL SP_SubsidiaryLedger(:accountCode, :fundID, :cutoff)',
       {
-        replacements: { accountCode: ChartofAccountsID, fundID: FundID, cutoff: CutOffDate },
+        replacements: {
+          accountCode: ChartofAccountsID ?? '%',
+          fundID: FundID ?? '%',
+          cutoff: CutOffDate ?? new Date().toISOString().slice(0, 10)
+        },
       }
     );
 
-    return res.json(results);
+    // Handle nested results array from CALL if necessary
+    const finalData = (Array.isArray(results) && Array.isArray(results[0])) ? results[0] : results;
+
+    return res.json(finalData);
   } catch (err) {
-    console.error('Error:', err);
-    res.status(500).json({ error: 'Internal server error' });
+    console.error('Subsidiary Ledger Error:', err);
+    res.status(500).json({
+      error: 'Internal server error',
+      message: err.message,
+      stack: process.env.NODE_ENV === 'development' ? err.stack : undefined
+    });
   }
 };
 
@@ -106,21 +120,38 @@ exports.exportExcel = async (req, res) => {
       CutOffDate,
       FundID,
     } = req.body;
-    
+
+    console.log('Subsidiary Ledger Export Request:', req.body);
+
     const results = await sequelize.query(
       'CALL SP_SubsidiaryLedger(:accountCode, :fundID, :cutoff)',
       {
-        replacements: { accountCode: ChartofAccountsID, fundID: FundID, cutoff: CutOffDate },
+        replacements: {
+          accountCode: ChartofAccountsID ?? '%',
+          fundID: FundID ?? '%',
+          cutoff: CutOffDate ?? new Date().toISOString().slice(0, 10)
+        },
       }
     );
 
+    // Handle nested results array from CALL if necessary
+    const finalData = (Array.isArray(results) && Array.isArray(results[0])) ? results[0] : results;
+
     const filename = `Subsidiary_Ledger_${Date.now()}.xlsx`;
-    const filePath = await exportToExcel(results, filename);
+    const filePath = await exportToExcel(finalData, filename);
     res.setHeader('Access-Control-Expose-Headers', 'Content-Disposition');
-    res.download(filePath, err => { if (err) fs.unlinkSync(filePath); });
+    res.download(filePath, err => {
+      if (err) {
+        console.error('Download error:', err);
+        if (fs.existsSync(filePath)) fs.unlinkSync(filePath);
+      }
+    });
   } catch (err) {
-    console.log('Error exporting to Excel:', err);
-    res.status(500).json({ error: err.message });
+    console.error('Error exporting to Excel:', err);
+    res.status(500).json({
+      error: 'Export failed',
+      message: err.message
+    });
   }
 };
 
