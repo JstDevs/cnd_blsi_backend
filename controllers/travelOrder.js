@@ -589,7 +589,7 @@ exports.approveTransaction = async (req, res) => {
 
     // Update status to Approved
     await transactionRecord.update({
-      Status: 'Approved',
+      Status: 'Posted',
       ModifyBy: req.user.id,
       ModifyDate: new Date()
     }, { transaction: t });
