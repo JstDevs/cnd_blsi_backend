@@ -21,7 +21,18 @@ BEGIN
     SUM(bud.TotalAmount) - SUM(ABS(bud.Charges)) AS Difference2,
 
     -- Last day of the month for fsy.MonthEnd
-    LAST_DAY(fsy.MonthEnd) AS Period,
+    CASE 
+      WHEN fsy.MonthEnd IN ("January", "March", "May", "July", "August", "October", "December")
+      THEN CONCAT(fsy.MonthEnd, " 31, ", fsy.Year)
+      WHEN fsy.MonthEnd IN ("April", "June", "September", "November")
+      THEN CONCAT(fsy.MonthEnd, " 30, ", fsy.Year)
+      WHEN fsy.Year % 4
+      THEN CONCAT(fsy.MonthEnd, " 29, ", fsy.Year)
+      WHEN NOT fsy.Year % 4
+      THEN CONCAT(fsy.MonthEnd, " 28, ", fsy.Year)
+      ELSE "Error Period"
+    END AS Period,
+    -- fsy.MonthEnd AS Period,
 
     -- Redundant group totals (used again as _Sum)
     SUM(bud.Appropriation) AS Original_Sum,
