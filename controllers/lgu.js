@@ -66,7 +66,7 @@ exports.update = async (req, res) => {
     });
     if (updated) {
       const updatedItem = await lgu.findByPk(req.params.id);
-      
+
       if (updatedItem.Logo) {
         updatedItem.Logo = `${process.env.BASE_URL}/uploads/${updatedItem.Logo}`; // full path to logo
       }

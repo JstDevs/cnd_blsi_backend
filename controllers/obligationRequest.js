@@ -212,6 +212,17 @@ exports.create = async (req, res) => {
         throw new Error(`Charge Account with ID ${item.ChargeAccountID} not found`);
       }
 
+      // --- Budget Validation ---
+      const appropriation = parseFloat(account.Appropriation || 0);
+      const used = parseFloat(account.PreEncumbrance || 0) + parseFloat(account.Encumbrance || 0);
+      const available = appropriation - used;
+      const currentAmount = parseFloat(item.subtotal || item.Sub_Total || 0);
+
+      if (currentAmount > available) {
+        throw new Error(`Insufficient budget for account '${account.Name}'. Available: ${available.toLocaleString('en-US', { minimumFractionDigits: 2 })}, Requested: ${currentAmount.toLocaleString('en-US', { minimumFractionDigits: 2 })}`);
+      }
+      // -------------------------
+
       let credit = 0;
       let debit = 0;
       if (account.ChartofAccounts?.NormalBalance === 'Debit') {
