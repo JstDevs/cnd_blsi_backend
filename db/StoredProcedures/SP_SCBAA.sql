@@ -11,7 +11,8 @@ BEGIN
     acs.Name AS Subtype,
     acc.Name AS Category,
     coa.Name AS ChartOfAccounts,
-    REPLACE(coa.AccountCode, '-', '') AS AccountCode,
+    -- REPLACE(coa.AccountCode, '-', '') AS AccountCode,
+    coa.AccountCode AS AccountCode,
     
     SUM(bud.Appropriation) AS Original,
     SUM(bud.TotalAmount) AS Final,
