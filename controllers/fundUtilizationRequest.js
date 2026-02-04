@@ -274,6 +274,17 @@ exports.save = async (req, res) => {
         throw new Error(`Charge Account with ID ${itm.ChargeAccountID} not found`);
       }
 
+      // --- Budget Validation ---
+      const allotmentBalance = parseFloat(account.AllotmentBalance || 0);
+      const used = parseFloat(account.PreEncumbrance || 0);
+      const available = allotmentBalance - used;
+      const currentAmount = parseFloat(itm.subtotal || itm.Sub_Total || 0);
+
+      if (currentAmount > available) {
+        throw new Error(`Insufficient budget for account '${account.Name}'. Available: ${available.toLocaleString('en-US', { minimumFractionDigits: 2 })}, Requested: ${currentAmount.toLocaleString('en-US', { minimumFractionDigits: 2 })}`);
+      }
+      // -------------------------
+
       let credit = 0;
       let debit = 0;
       if (account.ChartofAccounts?.NormalBalance === 'Debit') {
@@ -756,6 +767,17 @@ exports.update = async (req, res) => {
     for (const itm of Items) {
       const account = budgetMap.get(itm.ChargeAccountID);
       if (!account) throw new Error(`Charge Account ID ${itm.ChargeAccountID} not found`);
+
+      // --- Budget Validation ---
+      const allotmentBalance = parseFloat(account.AllotmentBalance || 0);
+      const used = parseFloat(account.PreEncumbrance || 0);
+      const available = allotmentBalance - used;
+      const currentAmount = parseFloat(itm.subtotal || itm.Sub_Total || 0);
+
+      if (currentAmount > available) {
+        throw new Error(`Insufficient budget for account '${account.Name}'. Available: ${available.toLocaleString('en-US', { minimumFractionDigits: 2 })}, Requested: ${currentAmount.toLocaleString('en-US', { minimumFractionDigits: 2 })}`);
+      }
+      // -------------------------
 
       const subTotal = parseFloat(itm.Sub_Total || itm.subtotal || 0);
       budgetChanges[itm.ChargeAccountID] = (budgetChanges[itm.ChargeAccountID] || 0) + subTotal;
